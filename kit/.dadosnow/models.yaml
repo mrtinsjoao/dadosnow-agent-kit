@@ -1,0 +1,48 @@
+# Model reference used by the kit. Prices change: check the official page
+# before relying on a number, and update verified_at when you do.
+verified_at: 2026-09-30
+pricing_source: https://platform.claude.com/docs/en/about-claude/pricing
+models_source: https://platform.claude.com/docs/en/about-claude/models/overview
+
+# Claude Code aliases (sonnet, opus, haiku, fable) resolve to the IDs below
+# on recent Claude Code versions. Subagents in this kit use the alias, so
+# they follow the current model without edits.
+models:
+  - id: claude-haiku-4-5
+    alias: haiku
+    tier: trivial          # mechanical work, no judgment
+    usd_per_mtok: { input: 1, output: 5 }
+    context: 200k
+    effort: not supported
+
+  - id: claude-sonnet-5-5
+    alias: sonnet
+    tier: standard         # execute known patterns, review diffs
+    usd_per_mtok: { input: 2, output: 10 }
+    context: 1M
+    effort_default: { api: high, claude_code: medium }
+
+  - id: claude-opus-5-5
+    alias: opus
+    tier: critical         # architecture, risky or cross-cutting changes
+    usd_per_mtok: { input: 4, output: 20 }
+    context: 1M
+    effort_default: { api: medium, claude_code: medium }
+
+  - id: claude-fable-5-1
+    alias: fable
+    tier: frontier         # opt-in only: hardest reasoning, advisor role
+    usd_per_mtok: { input: 10, output: 50 }
+    context: 1M
+    effort_default: { api: high }
+
+# Activity -> model x effort. Starting points, not laws: measure on your own
+# work before moving a default.
+matrix:
+  explore_codebase:      { model: sonnet, effort: medium }
+  plan_change:           { model: session, effort: medium }
+  implement_known:       { model: sonnet, effort: medium }
+  implement_hard:        { model: sonnet, effort: high }
+  review_diff:           { model: sonnet, effort: high }
+  architecture_decision: { model: opus,   effort: high }
+  chores_renames:        { model: haiku,  effort: n/a }

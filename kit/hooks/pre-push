@@ -1,0 +1,18 @@
+# >>> dadosnow-kit gate >>>
+# Review gate from the DadosNow kit. Remove this block or run uninstall.sh to disable.
+# Runs first, then re-runs the rest of this hook with the original stdin.
+# Blocks only when the gate exits 10 (a reviewer said BLOCK); any other
+# failure lets the push through.
+if [ -z "${DN_GATE_RAN:-}" ]; then
+  dn_tmp="$(mktemp)"; cat > "$dn_tmp"
+  dn_gate="$(git rev-parse --show-toplevel)/.dadosnow/gate.sh"
+  dn_rc=0
+  if [ -f "$dn_gate" ]; then bash "$dn_gate" "$@" < "$dn_tmp" || dn_rc=$?; fi
+  if [ "$dn_rc" -eq 10 ]; then rm -f "$dn_tmp"; exit 1; fi
+  dn_interp="$(head -n 1 "$0" | sed -n 's/^#![[:space:]]*//p')"
+  [ -n "$dn_interp" ] || dn_interp=sh
+  dn_rc=0
+  set -f; DN_GATE_RAN=1 $dn_interp "$0" "$@" < "$dn_tmp" || dn_rc=$?; set +f
+  rm -f "$dn_tmp"; exit "$dn_rc"
+fi
+# <<< dadosnow-kit gate <<<
