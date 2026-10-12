@@ -1,0 +1,19 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: bash -n install.sh uninstall.sh kit/.dadosnow/gate.sh tests/test_kit.sh
+      - name: End-to-end tests (stub claude, no model calls)
+        run: bash tests/test_kit.sh
