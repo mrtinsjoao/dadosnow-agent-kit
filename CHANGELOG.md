@@ -25,8 +25,8 @@
   later install updates every file still unchanged since it was installed,
   without `--force`. In 0.1.0, any file the kit had changed counted as
   user-edited and was kept. Upgrading from 0.1.0 needs `--force` once; the
-  installer says so and leaves `.dadosnow/VERSION` alone while any file is
-  kept.
+  installer says so and leaves `.dadosnow/VERSION` alone until `--force`
+  updates the tree.
   `uninstall.sh` uses the same manifest.
 - GitHub Actions runs `tests/test_kit.sh` on every push and PR. Tests: 31.
 - README in English with a Portuguese translation (`README.pt-BR.md`):

@@ -71,8 +71,9 @@ LEGACY=0
 cd "$KIT_DIR/kit"
 while IFS= read -r f; do install_file "${f#./}"; done < <(find . -type f ! -path './hooks/*' | sort)
 chmod +x "$TARGET/.dadosnow/gate.sh"
-# VERSION is stamped only when nothing was left behind.
-if (( kept == 0 )); then echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"; fi
+# A 0.1.0 tree keeps its VERSION until --force actually updates it; with a
+# manifest, kept files are the user's own edits and VERSION moves on.
+if (( ! LEGACY || kept == 0 )); then echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"; fi
 cp "$NEW_MANIFEST" "$MANIFEST"
 
 # Backups stay out of git.
@@ -137,8 +138,6 @@ if (( LEGACY && kept > 0 )); then
   echo "    did not record hashes, so the installer cannot tell your edits from old kit"
   echo "    files. Run once with --force to update; anything replaced is backed up first"
   echo "    under .dadosnow/backup/. Until then the kept files stay on the old version."
-elif (( kept > 0 )); then
-  echo "  .dadosnow/VERSION left as is: $kept file(s) kept. Use --force to replace them."
 fi
 echo
 echo "Next:"

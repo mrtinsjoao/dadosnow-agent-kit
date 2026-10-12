@@ -33,7 +33,8 @@ host is the real control. Follow them literally anyway.
     must not be `HEAD`. A `:`, `+`, `*` or space means `RESULT: FAILED`.
   - `REMOTE` must be a name printed by `git -C REPO remote`, never a URL.
 - **Protected branches:** never push to the remote's default branch
-  (`git -C REPO symbolic-ref --short refs/remotes/REMOTE/HEAD`), `main`,
+  (`git -C REPO symbolic-ref --short refs/remotes/REMOTE/HEAD`; if that ref
+  doesn't exist, the list that follows is the protected set), `main`,
   `master`, `develop`, `production` or `release/*`. Never push tags. Return
   `RESULT: FAILED` with the reason.
 - **The push command is fixed:**
@@ -60,9 +61,10 @@ host is the real control. Follow them literally anyway.
     `*.jks`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `*secret*`,
     `credentials*`, `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`,
     `*.tfstate`, `*.tfvars` or `kubeconfig`.
-  - Refuse any staged diff line containing `AKIA`, `ASIA`, `-----BEGIN`,
-    `sk-`, `sk_live_`, `ghp_`, `github_pat_`, `glpat-`, `xox`, `AIza` or a URL
-    with a password (`://user:pass@`).
+  - Refuse any staged diff line matching `(AKIA|ASIA)[0-9A-Z]{16}`,
+    `-----BEGIN [A-Z ]*PRIVATE KEY`, `sk-[A-Za-z0-9_-]{20,}`, `sk_live_`,
+    `ghp_[A-Za-z0-9]{30,}`, `github_pat_`, `glpat-`, `xox[abposr]-`,
+    `AIza[0-9A-Za-z_-]{30,}` or a URL with a password (`://user:pass@`).
   - On a match, unstage, return `RESULT: FAILED` and name the path. Never
     print the value.
 - **Messages go through stdin, never inline**, so backticks and `$(...)` are

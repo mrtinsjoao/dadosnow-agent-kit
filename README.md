@@ -162,7 +162,7 @@ flowchart LR
 | `.dadosnow/*.template.md` | templates | Base for `AGENTS.md` and `SPEC.md` |
 
 The explorer and the two reviewers are **read-only** (`Read`, `Grep`,
-`Glob`). `dn-monitor` runs only the read commands listed in its file
+`Glob`). `dn-monitor` is told to run only the read commands listed in its file
 (`gh pr list`, `gh run list`, reading the gate log). `dn-git-ops` is told to run
 git and nothing else. None of them edits your code.
 

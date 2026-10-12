@@ -162,7 +162,7 @@ flowchart LR
 | `.dadosnow/*.template.md` | templates | Base do `AGENTS.md` e do `SPEC.md` |
 
 O explorador e os dois revisores são **só de leitura** (`Read`, `Grep`,
-`Glob`). O `dn-monitor` roda só os comandos de leitura listados no arquivo
+`Glob`). O `dn-monitor` tem instrução de rodar só os comandos de leitura listados no arquivo
 dele (`gh pr list`, `gh run list` e a leitura do log do gate). O `dn-git-ops`
 tem instrução de rodar git e mais nada. Nenhum deles edita o seu código.
 
