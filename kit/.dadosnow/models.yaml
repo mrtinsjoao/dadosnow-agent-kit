@@ -1,19 +1,24 @@
 # Model reference used by the kit. Prices change: check the official page
 # before relying on a number, and update verified_at when you do.
-verified_at: 2026-09-30
+verified_at: 2026-10-11
 pricing_source: https://platform.claude.com/docs/en/about-claude/pricing
 models_source: https://platform.claude.com/docs/en/about-claude/models/overview
 
 # Claude Code aliases (sonnet, opus, haiku, fable) resolve to the IDs below
 # on recent Claude Code versions. Subagents in this kit use the alias, so
-# they follow the current model without edits.
+# they follow the current model without edits. Exception: the Haiku agents
+# name claude-haiku-5-5 in full, because on Claude Code 2.1.291 the `haiku`
+# alias still resolved to Haiku 4.5 (checked 2026-10-11).
 models:
-  - id: claude-haiku-4-5
+  - id: claude-haiku-5-5
     alias: haiku
-    tier: trivial          # mechanical work, no judgment
-    usd_per_mtok: { input: 1, output: 5 }
-    context: 200k
-    effort: not supported
+    tier: bounded          # mechanical or fully specified work, no judgment
+    usd_per_mtok:          # price depends on the prompt size of each request
+      up_to_100k_prompt: { input: 0.10, output: 0.50 }
+      over_100k_prompt:  { input: 0.50, output: 2.50 }
+    context: 1M
+    effort_default: { api: medium, claude_code: medium }
+    notes: same text counts ~30% more tokens than on Haiku 4.5
 
   - id: claude-sonnet-5-5
     alias: sonnet
@@ -39,10 +44,12 @@ models:
 # Activity -> model x effort. Starting points, not laws: measure on your own
 # work before moving a default.
 matrix:
-  explore_codebase:      { model: sonnet, effort: medium }
+  explore_codebase:      { model: haiku,  effort: medium }
   plan_change:           { model: session, effort: medium }
   implement_known:       { model: sonnet, effort: medium }
   implement_hard:        { model: sonnet, effort: high }
   review_diff:           { model: sonnet, effort: high }
   architecture_decision: { model: opus,   effort: high }
-  chores_renames:        { model: haiku,  effort: n/a }
+  chores_renames:        { model: haiku,  effort: low }
+  commit_push_pr:        { model: haiku,  effort: low }     # dn-git-ops, scoped by the caller
+  monitor_ci_gate:       { model: haiku,  effort: low }     # dn-monitor, read-only
