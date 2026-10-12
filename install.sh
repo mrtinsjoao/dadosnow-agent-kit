@@ -5,7 +5,7 @@
 #
 # Copies the kit into TARGET_DIR (default: current directory):
 #   .claude/skills/dn-*      skills: dn-init, dn-plan, dn-tdd, dn-review
-#   .claude/agents/dn-*      read-only subagents: explorer and two reviewers
+#   .claude/agents/dn-*      subagents: explorer, two reviewers, git-ops, monitor
 #   .dadosnow/               gate script, model reference, templates
 #   pre-push hook block      the review gate (skip with --no-gate)
 #

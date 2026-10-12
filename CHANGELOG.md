@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0 — 2026-10-11
+
+- Claude Haiku 5.5 (`claude-haiku-5-5`) for bounded work. `models.yaml`
+  gains a tiered price (prompt up to / over 100K tokens), 1M context and
+  effort default `medium`, verified 2026-10-11. Haiku agents name the full ID
+  because the `haiku` alias still resolved to Haiku 4.5 on Claude Code 2.1.291.
+- New `dn-git-ops` subagent: runs one git operation fully specified by the
+  caller (commit listed files, push a named branch, open a PR). Push and PR
+  need `USER_AUTHORIZED_PUSH: yes` with the user's words. It never pushes to
+  the default branch, never uses `--force`/`--no-verify`, never merges and
+  refuses secret-looking paths and lines.
+- New `dn-monitor` subagent: read-only CI runs, open PRs (via `gh`) and gate
+  results.
+- `dn-explorer` moves from Sonnet to Haiku 5.5 (effort `medium`).
+- The gate appends one JSON line per run to `.git/dadosnow/gate.jsonl`.
+- GitHub Actions runs `tests/test_kit.sh` on every push and PR. Tests: 23.
+- README in English with a Portuguese translation (`README.pt-BR.md`):
+  requirements, a real BLOCK transcript, measured gate cost and time, new FAQ.
+
 ## 0.1.0 — 2026-10-01
 
 First public version.
