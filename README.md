@@ -76,6 +76,13 @@ your code. Nothing runs on a third-party server other than Claude Code itself.
 | GitHub CLI `gh`, logged in | Only for `dn-monitor`'s CI/PR section and `dn-git-ops` opening PRs |
 | `timeout` (GNU coreutils) | Optional. Without it, reviewers run with no time limit. On macOS, `brew install coreutils` |
 
+Tested on Claude Code 2.1.291 with the Anthropic API. The Haiku agents name
+`claude-haiku-5-5` in full, because on that version the `haiku` alias still
+pointed to Haiku 4.5. On Bedrock, Vertex or a model allowlist, change the
+`model:` line in `.claude/agents/dn-*.md` to a model your account can use.
+
+<a id="instalar-em-2-minutos"></a>
+
 ## Install in 2 minutes
 
 ```bash
@@ -120,6 +127,10 @@ including Husky's, the gate is **added** to it and never replaces it.
 
 </details>
 
+> **Updating from 0.1.0?** Run `./install.sh --force` once. Version 0.1.0 did
+> not record file hashes, so without `--force` the installer keeps every file
+> that changed and tells you so. Anything replaced is backed up first.
+
 ## How it works
 
 ```mermaid
@@ -152,8 +163,8 @@ flowchart LR
 
 The explorer and the two reviewers are **read-only** (`Read`, `Grep`,
 `Glob`). `dn-monitor` runs only the read commands listed in its file
-(`gh pr list`, `gh run list`, reading the gate log). `dn-git-ops` runs git and
-nothing else. None of them edits your code.
+(`gh pr list`, `gh run list`, reading the gate log). `dn-git-ops` is told to run
+git and nothing else. None of them edits your code.
 
 ### Bounded agents: who decides, who executes
 
@@ -171,10 +182,16 @@ USER_AUTHORIZED_PUSH: yes — "push the csv branch"
 | Rule | What happens |
 |---|---|
 | Push or PR without `USER_AUTHORIZED_PUSH: yes` and the user's own words | `RESULT: NEED_AUTH`, nothing runs |
-| Push to the default branch, `main` or `master` | Refused |
-| `--force`, `--no-verify` | Never used. The review gate always runs |
+| Push to the default branch, `main`, `master`, `develop`, `production`, `release/*`, or a tag | Refused |
+| Branch with `:`, `+` or `HEAD`, or a remote that isn't in `git remote` | Refused. The push is always `refs/heads/B:refs/heads/B` |
+| `--force`, `--no-verify`, `DN_GATE=off`, `core.hooksPath` | Not allowed. A blocked or rejected push ends the task |
+| Files staged that aren't in `FILES` | Refused |
 | `.env`, keys, or a staged line that looks like a secret | Refused, the path is named, the value is never printed |
-| Merge, approve, close | Never |
+| Merge, approve, close | Not allowed |
+
+These rules are instructions the agent follows, not a sandbox: a model can
+still get one wrong. For branches that matter, turn on branch protection on
+your Git host. That is the control that holds no matter who pushes.
 
 ### The push gate in detail
 
@@ -355,6 +372,8 @@ The kit is **Claude-first**, but its base is portable:
 Native support for other harnesses comes when there are real requests. Open
 an issue saying which one you use.
 
+<a id="perguntas-frequentes"></a>
+
 ## FAQ
 
 <details>
@@ -404,10 +423,12 @@ roadmap. Tell us in an issue if you need it.
 <details>
 <summary><b>Will an agent push without my permission?</b></summary>
 
-No. `dn-git-ops` refuses any push or PR unless the handoff carries
-`USER_AUTHORIZED_PUSH: yes` together with your own words. It also never
-pushes to the default branch, never force-pushes and never skips the gate.
-The pre-push gate runs on its pushes like on yours.
+Not by design. `dn-git-ops` is instructed to refuse any push or PR unless the
+handoff carries `USER_AUTHORIZED_PUSH: yes` together with your own words, and
+to refuse protected branches, force and skipping the gate. The pre-push gate
+runs on its pushes like on yours. These are instructions to a model, not a
+sandbox, so keep branch protection on in your Git host and Claude Code's
+permission prompt for `git push`.
 
 </details>
 
@@ -531,7 +552,7 @@ This kit gets better with use by people who code every day.
   stack, the project size and what helped most. That guides the next versions.
 - **Want to change something?** Open a small, focused PR. Changes to skills
   and agents come with a before-and-after example. Run `bash tests/test_kit.sh`
-  first: 26 tests covering install, upgrade, the gate, its log and uninstall, using a
+  first: 31 tests covering install, upgrade, the gate, its log and uninstall, using a
   fake `claude`, at zero cost. CI runs the same suite on every PR.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the step by step.

@@ -77,6 +77,12 @@ com o código. Nada roda em servidor de terceiros além do próprio Claude Code.
 | GitHub CLI `gh` logado | Só para a parte de CI/PR do `dn-monitor` e para o `dn-git-ops` abrir PR |
 | `timeout` (GNU coreutils) | Opcional. Sem ele, os revisores rodam sem limite de tempo. No macOS: `brew install coreutils` |
 
+Testado no Claude Code 2.1.291 com a API da Anthropic. Os agentes Haiku usam o
+ID completo `claude-haiku-5-5`, porque nessa versão o alias `haiku` ainda
+apontava para o Haiku 4.5. Em Bedrock, Vertex ou com lista de modelos
+permitidos, troque a linha `model:` em `.claude/agents/dn-*.md` por um modelo
+que a sua conta acessa.
+
 ## Instalar em 2 minutos
 
 ```bash
@@ -121,6 +127,10 @@ nada. Se o projeto já tem um hook de `pre-push`, inclusive do Husky, o gate é
 
 </details>
 
+> **Atualizando da 0.1.0?** Rode `./install.sh --force` uma vez. A 0.1.0 não
+> gravava o hash dos arquivos, então sem `--force` o instalador mantém todo
+> arquivo que mudou e avisa. O que for substituído ganha backup antes.
+
 ## Como funciona
 
 ```mermaid
@@ -154,7 +164,7 @@ flowchart LR
 O explorador e os dois revisores são **só de leitura** (`Read`, `Grep`,
 `Glob`). O `dn-monitor` roda só os comandos de leitura listados no arquivo
 dele (`gh pr list`, `gh run list` e a leitura do log do gate). O `dn-git-ops`
-roda git e mais nada. Nenhum deles edita o seu código.
+tem instrução de rodar git e mais nada. Nenhum deles edita o seu código.
 
 ### Agentes delimitados: quem decide e quem executa
 
@@ -172,10 +182,16 @@ USER_AUTHORIZED_PUSH: yes — "pode dar push na branch do csv"
 | Regra | O que acontece |
 |---|---|
 | Push ou PR sem `USER_AUTHORIZED_PUSH: yes` e as suas próprias palavras | `RESULT: NEED_AUTH`, e nada roda |
-| Push para a branch padrão, `main` ou `master` | Recusado |
-| `--force`, `--no-verify` | Nunca usados. O gate de revisão sempre roda |
+| Push para a branch padrão, `main`, `master`, `develop`, `production`, `release/*` ou tag | Recusado |
+| Branch com `:`, `+` ou `HEAD`, ou remote que não está no `git remote` | Recusado. O push é sempre `refs/heads/B:refs/heads/B` |
+| `--force`, `--no-verify`, `DN_GATE=off`, `core.hooksPath` | Proibidos. Push bloqueado ou rejeitado encerra a tarefa |
+| Arquivo no stage que não está em `FILES` | Recusado |
 | `.env`, chaves, ou linha no stage com cara de segredo | Recusado: o agente diz qual é o arquivo e nunca mostra o valor |
-| Merge, aprovar, fechar | Nunca |
+| Merge, aprovar, fechar | Proibidos |
+
+Essas regras são instruções que o agente segue, não um sandbox: um modelo
+ainda pode errar uma delas. Nas branches que importam, ligue a proteção de
+branch no seu Git host. Esse é o controle que vale para qualquer um que dê push.
 
 ### O gate de push, em detalhe
 
@@ -408,10 +424,12 @@ roadmap; conte numa issue se você precisa.
 <details>
 <summary><b>Algum agente vai dar push sem a minha permissão?</b></summary>
 
-Não. O `dn-git-ops` recusa push ou PR a menos que o handoff traga
-`USER_AUTHORIZED_PUSH: yes` junto com as suas próprias palavras. Ele também
-nunca dá push na branch padrão, nunca força e nunca pula o gate. O gate de
-pre-push roda nos pushes dele como nos seus.
+Não por projeto. O `dn-git-ops` tem instrução de recusar push ou PR a menos
+que o handoff traga `USER_AUTHORIZED_PUSH: yes` junto com as suas próprias
+palavras, e de recusar branch protegida, force e pular o gate. O gate de
+pre-push roda nos pushes dele como nos seus. São instruções para um modelo, não
+um sandbox: mantenha a proteção de branch no seu Git host e a confirmação do
+Claude Code para `git push`.
 
 </details>
 
@@ -536,7 +554,7 @@ Este kit melhora com o uso de quem programa no dia a dia.
   o tamanho do projeto e o que mais ajudou. Isso orienta as próximas versões.
 - **Quer mudar algo?** Abra um PR pequeno e focado. Mudanças em skills e
   agentes vêm com um exemplo do antes e do depois. Rode `bash tests/test_kit.sh`
-  antes: são 26 testes de instalação, atualização, gate, log e desinstalação que usam um
+  antes: são 31 testes de instalação, atualização, gate, log e desinstalação que usam um
   `claude` falso e não custam nada. O CI roda a mesma suíte em todo PR.
 
 Veja o [CONTRIBUTING.md](CONTRIBUTING.md) para o passo a passo.

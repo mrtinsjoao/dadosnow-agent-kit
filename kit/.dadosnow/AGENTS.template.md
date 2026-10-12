@@ -43,9 +43,11 @@ See `.dadosnow/SPEC.md`. Summary: <migrations, auth, billing, infra, prod config
 ## Activity → model × effort
 | Activity | Model | Effort |
 |---|---|---|
-| Explore the codebase | sonnet | medium |
+| Explore the codebase | claude-haiku-5-5 | medium |
 | Implement a known pattern | sonnet | medium |
 | Implement something hard | sonnet | high |
 | Review a diff | sonnet | high |
 | Architecture or risky change | opus | high |
-| Chores, renames | haiku | — |
+| Chores, renames | claude-haiku-5-5 | low |
+| Commit, push, open PR (dn-git-ops) | claude-haiku-5-5 | low |
+| CI and gate status (dn-monitor) | claude-haiku-5-5 | low |

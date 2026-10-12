@@ -70,9 +70,9 @@ START="$(date +%s)"
 log_run() {  # $1 = result (allow|block|skipped-too-large), $2 = verdicts as JSON object
   local dir; dir="$(git rev-parse --absolute-git-dir 2>/dev/null)/dadosnow" || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  printf '{"ts":"%s","ranges":"%s","lines":%s,"result":"%s","verdicts":%s,"seconds":%s}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${RANGES[*]}" "$LINES" "$1" "$2" "$(( $(date +%s) - START ))" \
-    >> "$dir/gate.jsonl" 2>/dev/null || true
+  { printf '{"ts":"%s","ranges":"%s","lines":%s,"result":"%s","verdicts":%s,"seconds":%s}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${RANGES[*]}" "$LINES" "$1" "$2" "$(( $(date +%s) - START ))" \
+      >> "$dir/gate.jsonl"; } 2>/dev/null || true
 }
 for r in "${RANGES[@]}"; do git diff --no-color "$r" -- . "${EXCLUDES[@]}"; done > "$TMP/diff"
 

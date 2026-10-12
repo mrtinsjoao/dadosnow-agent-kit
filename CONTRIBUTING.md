@@ -23,9 +23,11 @@ Obrigado por ajudar a melhorar o kit.
 - O instalador é aditivo: nunca sobrescreve arquivo do usuário sem `--force`.
 - O gate é fail-open: só `VERDICT: BLOCK` bloqueia o push.
 - Os subagentes não editam código. O explorador e os revisores são só
-  leitura. O `dn-monitor` roda só os comandos de leitura listados no arquivo
-  dele. O `dn-git-ops` roda só git, e só o que quem o chama especificou; push
-  exige a autorização do usuário no handoff.
+  leitura. O `dn-monitor` tem instrução de rodar só os comandos de leitura
+  listados no arquivo dele. O `dn-git-ops` tem instrução de rodar só git, e só
+  o que quem o chama especificou; push exige a autorização do usuário no
+  handoff. Essas regras são instruções, não sandbox: não escreva no README
+  promessa que só o prompt garante.
 - O instalador grava `.dadosnow/manifest` (hash de cada arquivo instalado). É
   ele que permite atualizar o que o usuário não editou sem `--force`.
 - O README existe em inglês (`README.md`) e em português (`README.pt-BR.md`).

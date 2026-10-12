@@ -44,12 +44,12 @@ models:
 # Activity -> model x effort. Starting points, not laws: measure on your own
 # work before moving a default.
 matrix:
-  explore_codebase:      { model: haiku,  effort: medium }
+  explore_codebase:      { model: claude-haiku-5-5, effort: medium }
   plan_change:           { model: session, effort: medium }
   implement_known:       { model: sonnet, effort: medium }
   implement_hard:        { model: sonnet, effort: high }
   review_diff:           { model: sonnet, effort: high }
   architecture_decision: { model: opus,   effort: high }
-  chores_renames:        { model: haiku,  effort: low }
-  commit_push_pr:        { model: haiku,  effort: low }     # dn-git-ops, scoped by the caller
-  monitor_ci_gate:       { model: haiku,  effort: low }     # dn-monitor, read-only
+  chores_renames:        { model: claude-haiku-5-5, effort: low }
+  commit_push_pr:        { model: claude-haiku-5-5, effort: low }     # dn-git-ops, scoped by the caller
+  monitor_ci_gate:       { model: claude-haiku-5-5, effort: low }     # dn-monitor, read-only

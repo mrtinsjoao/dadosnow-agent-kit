@@ -64,10 +64,15 @@ install_file() {  # $1 = path relative to kit/
 }
 
 echo "DadosNow kit $KIT_VERSION -> $TARGET"
+# A 0.1.0 install has VERSION but no manifest, so every changed kit file looks
+# user-edited and would be kept. Say so up front instead of a silent partial upgrade.
+LEGACY=0
+[[ -f "$TARGET/.dadosnow/VERSION" && ! -f "$MANIFEST" && $FORCE -eq 0 ]] && LEGACY=1
 cd "$KIT_DIR/kit"
 while IFS= read -r f; do install_file "${f#./}"; done < <(find . -type f ! -path './hooks/*' | sort)
 chmod +x "$TARGET/.dadosnow/gate.sh"
-echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"
+# VERSION is stamped only when nothing was left behind.
+if (( kept == 0 )); then echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"; fi
 cp "$NEW_MANIFEST" "$MANIFEST"
 
 # Backups stay out of git.
@@ -126,6 +131,15 @@ fi
 
 echo
 echo "Done: $added added, $updated replaced, $kept kept."
+if (( LEGACY && kept > 0 )); then
+  echo
+  echo "  ! No .dadosnow/manifest found: this project was installed by kit 0.1.0, which"
+  echo "    did not record hashes, so the installer cannot tell your edits from old kit"
+  echo "    files. Run once with --force to update; anything replaced is backed up first"
+  echo "    under .dadosnow/backup/. Until then the kept files stay on the old version."
+elif (( kept > 0 )); then
+  echo "  .dadosnow/VERSION left as is: $kept file(s) kept. Use --force to replace them."
+fi
 echo
 echo "Next:"
 echo "  1. Open Claude Code in $TARGET and run /dn-init — it drafts AGENTS.md,"

@@ -56,6 +56,14 @@ out="$("$K2/install.sh" "$R")"
 check "unedited file updated to the newer kit" 'grep -q "changed in a newer kit" $R/.dadosnow/models.yaml && grep -q "models.yaml (updated)" <<<"$out"'
 check "edited file still kept on upgrade" 'grep -q "# mine" $R/.claude/skills/dn-plan/SKILL.md && ! grep -q "changed in a newer kit" $R/.claude/skills/dn-plan/SKILL.md'
 check "manifest written" '[[ -s $R/.dadosnow/manifest ]] && grep -q " .dadosnow/gate.sh$" $R/.dadosnow/manifest'
+echo "upgrade from 0.1.0 (no manifest)"
+L="$(new_repo legacy)"
+"$KIT/install.sh" "$L" >/dev/null && rm -f "$L/.dadosnow/manifest" && echo "0.1.0" > "$L/.dadosnow/VERSION"
+out="$("$K2/install.sh" "$L")"
+check "0.1.0: changed kit file kept, with a --force notice" 'grep -q "models.yaml (yours differs" <<<"$out" && grep -q "No .dadosnow/manifest found" <<<"$out" && ! grep -q "changed in a newer kit" $L/.dadosnow/models.yaml'
+check "0.1.0: VERSION not stamped while files are kept" 'grep -qx "0.1.0" $L/.dadosnow/VERSION'
+out="$("$K2/install.sh" "$L" --force)"
+check "0.1.0: --force updates, backs up and writes the manifest" 'grep -q "changed in a newer kit" $L/.dadosnow/models.yaml && ls $L/.dadosnow/backup/*/.dadosnow/models.yaml >/dev/null 2>&1 && [[ -s $L/.dadosnow/manifest ]] && ! grep -qx "0.1.0" $L/.dadosnow/VERSION'
 "$KIT/install.sh" "$R" --force >/dev/null
 git -C "$R" add -A && git -C "$R" commit -qm kit
 
@@ -70,6 +78,13 @@ check "push with finding is blocked by the gate" '[[ $? -ne 0 ]] && grep -q "pus
 check "blocked run logged as block" 'tail -1 $GLOG | jq -e ".result == \"block\"" >/dev/null'
 check "gate log stays out of the work tree" '[[ -z "$(git -C $R status --porcelain)" ]]'
 check "DN_GATE=off skips" 'DN_GATE=off push "$R"'
+commit "$R" "w = 4" "big"
+check "too-large diff allowed and logged" 'DN_GATE_MAX_LINES=0 push "$R" && tail -1 $GLOG | jq -e ".result == \"skipped-too-large\"" >/dev/null'
+echo "v = 5" > "$R/other.py"; git -C "$R" add other.py; git -C "$R" commit -qm "log dir read-only"
+chmod 555 "$R/.git/dadosnow"
+err="$(git -C "$R" push 2>&1 >/dev/null)"; rc=$?
+chmod 755 "$R/.git/dadosnow"
+check "log write failure: push allowed, no error printed" '[[ $rc -eq 0 ]] && ! grep -qi "permission denied" <<<"$err"'
 commit "$R" "y = 2" "another"
 mkdir -p "$WORK/minbin"
 for t in git bash sh cat sed awk grep head tail mktemp rm mkdir dirname basename tr od wc date cmp find sort env; do
