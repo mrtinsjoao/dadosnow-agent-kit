@@ -15,7 +15,12 @@
   results.
 - `dn-explorer` moves from Sonnet to Haiku 5.5 (effort `medium`).
 - The gate appends one JSON line per run to `.git/dadosnow/gate.jsonl`.
-- GitHub Actions runs `tests/test_kit.sh` on every push and PR. Tests: 23.
+- `install.sh` writes `.dadosnow/manifest` (hash per installed file). A
+  later install updates every file still unchanged since it was installed,
+  without `--force`. In 0.1.0, any file the kit had changed counted as
+  user-edited and was kept. Upgrading from 0.1.0 needs `--force` once.
+  `uninstall.sh` uses the same manifest.
+- GitHub Actions runs `tests/test_kit.sh` on every push and PR. Tests: 26.
 - README in English with a Portuguese translation (`README.pt-BR.md`):
   requirements, a real BLOCK transcript, measured gate cost and time, new FAQ.
 

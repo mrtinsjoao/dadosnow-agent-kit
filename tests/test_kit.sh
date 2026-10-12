@@ -47,6 +47,16 @@ out="$("$KIT/install.sh" "$R")"
 check "edited file kept without --force" 'grep -q "# mine" $R/.claude/agents/dn-explorer.md'
 out="$("$KIT/install.sh" "$R" --force)"
 check "--force replaces and backs up" '! grep -q "# mine" $R/.claude/agents/dn-explorer.md && grep -rq "# mine" $R/.dadosnow/backup/'
+echo "upgrade"
+K2="$WORK/kit2"; cp -r "$KIT" "$K2"
+echo "# changed in a newer kit" >> "$K2/kit/.dadosnow/models.yaml"
+echo "# changed in a newer kit" >> "$K2/kit/.claude/skills/dn-plan/SKILL.md"
+echo "# mine" >> "$R/.claude/skills/dn-plan/SKILL.md"
+out="$("$K2/install.sh" "$R")"
+check "unedited file updated to the newer kit" 'grep -q "changed in a newer kit" $R/.dadosnow/models.yaml && grep -q "models.yaml (updated)" <<<"$out"'
+check "edited file still kept on upgrade" 'grep -q "# mine" $R/.claude/skills/dn-plan/SKILL.md && ! grep -q "changed in a newer kit" $R/.claude/skills/dn-plan/SKILL.md'
+check "manifest written" '[[ -s $R/.dadosnow/manifest ]] && grep -q " .dadosnow/gate.sh$" $R/.dadosnow/manifest'
+"$KIT/install.sh" "$R" --force >/dev/null
 git -C "$R" add -A && git -C "$R" commit -qm kit
 
 echo "gate"

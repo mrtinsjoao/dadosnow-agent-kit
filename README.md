@@ -145,13 +145,15 @@ flowchart LR
 | `.claude/agents/dn-code-reviewer` | subagent (Sonnet) | Logic bugs, broken contracts, untested behaviour |
 | `.claude/agents/dn-security-reviewer` | subagent (Sonnet) | Secrets, injection, authorization, data exposure |
 | `.claude/agents/dn-git-ops` | subagent (Haiku 5.5) | Runs one git operation the caller fully specified: commit listed files, push a named branch, open a PR |
-| `.claude/agents/dn-monitor` | subagent (Haiku 5.5) | Read-only status: CI runs, open PRs, recent gate results |
+| `.claude/agents/dn-monitor` | subagent (Haiku 5.5) | Status of CI runs, open PRs and recent gate results, using only the read commands listed in its file |
 | `.dadosnow/gate.sh` + `pre-push` hook | script | Runs the two reviewers on every push and logs each run |
 | `.dadosnow/models.yaml` | reference | Models, prices and the activity → model × effort matrix, with the verification date |
 | `.dadosnow/*.template.md` | templates | Base for `AGENTS.md` and `SPEC.md` |
 
-The explorer, the two reviewers and the monitor are **read-only**: they
-never edit your code. `dn-git-ops` runs git and nothing else.
+The explorer and the two reviewers are **read-only** (`Read`, `Grep`,
+`Glob`). `dn-monitor` runs only the read commands listed in its file
+(`gh pr list`, `gh run list`, reading the gate log). `dn-git-ops` runs git and
+nothing else. None of them edits your code.
 
 ### Bounded agents: who decides, who executes
 
@@ -455,7 +457,11 @@ cd ~/your-project && ~/dadosnow-agent-kit/install.sh .
 ```
 
 Files you didn't edit are updated. Files you edited are kept, and the
-installer tells you which ones.
+installer tells you which ones. It tells them apart with the hashes it writes
+to `.dadosnow/manifest` at install time.
+
+**Coming from 0.1.0?** That version wrote no manifest, so run the update once
+with `--force`. Files you edited are copied to `.dadosnow/backup/` first.
 
 </details>
 
@@ -525,7 +531,7 @@ This kit gets better with use by people who code every day.
   stack, the project size and what helped most. That guides the next versions.
 - **Want to change something?** Open a small, focused PR. Changes to skills
   and agents come with a before-and-after example. Run `bash tests/test_kit.sh`
-  first: 23 tests covering install, the gate, its log and uninstall, using a
+  first: 26 tests covering install, upgrade, the gate, its log and uninstall, using a
   fake `claude`, at zero cost. CI runs the same suite on every PR.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the step by step.

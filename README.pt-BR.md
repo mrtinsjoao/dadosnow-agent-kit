@@ -146,13 +146,15 @@ flowchart LR
 | `.claude/agents/dn-code-reviewer` | subagente (Sonnet) | Bugs de lógica, contratos quebrados, comportamento sem teste |
 | `.claude/agents/dn-security-reviewer` | subagente (Sonnet) | Segredos, injeção, autorização, exposição de dados |
 | `.claude/agents/dn-git-ops` | subagente (Haiku 5.5) | Executa uma operação git que quem chamou definiu por completo: commit dos arquivos listados, push de uma branch nomeada, abertura de PR |
-| `.claude/agents/dn-monitor` | subagente (Haiku 5.5) | Status só de leitura: CI, PRs abertos, resultados recentes do gate |
+| `.claude/agents/dn-monitor` | subagente (Haiku 5.5) | Status de CI, PRs abertos e resultados recentes do gate, usando só os comandos de leitura listados no arquivo dele |
 | `.dadosnow/gate.sh` + hook `pre-push` | script | Roda os dois revisores em cada push e registra cada rodada |
 | `.dadosnow/models.yaml` | referência | Modelos, preços e a matriz atividade → modelo × effort, com data de verificação |
 | `.dadosnow/*.template.md` | templates | Base do `AGENTS.md` e do `SPEC.md` |
 
-O explorador, os dois revisores e o monitor são **só de leitura**: nunca
-editam o seu código. O `dn-git-ops` roda git e mais nada.
+O explorador e os dois revisores são **só de leitura** (`Read`, `Grep`,
+`Glob`). O `dn-monitor` roda só os comandos de leitura listados no arquivo
+dele (`gh pr list`, `gh run list` e a leitura do log do gate). O `dn-git-ops`
+roda git e mais nada. Nenhum deles edita o seu código.
 
 ### Agentes delimitados: quem decide e quem executa
 
@@ -459,7 +461,12 @@ cd ~/seu-projeto && ~/dadosnow-agent-kit/install.sh .
 ```
 
 Os arquivos que você não editou são atualizados. Os que você editou são
-mantidos, e o instalador avisa quais são.
+mantidos, e o instalador avisa quais são. Ele separa uns dos outros pelos
+hashes que grava em `.dadosnow/manifest` na instalação.
+
+**Vindo da 0.1.0?** Essa versão não gravava o manifesto. Rode a atualização uma
+vez com `--force`; os arquivos que você editou são copiados antes para
+`.dadosnow/backup/`.
 
 </details>
 
@@ -529,7 +536,7 @@ Este kit melhora com o uso de quem programa no dia a dia.
   o tamanho do projeto e o que mais ajudou. Isso orienta as próximas versões.
 - **Quer mudar algo?** Abra um PR pequeno e focado. Mudanças em skills e
   agentes vêm com um exemplo do antes e do depois. Rode `bash tests/test_kit.sh`
-  antes: são 23 testes de instalação, gate, log e desinstalação que usam um
+  antes: são 26 testes de instalação, atualização, gate, log e desinstalação que usam um
   `claude` falso e não custam nada. O CI roda a mesma suíte em todo PR.
 
 Veja o [CONTRIBUTING.md](CONTRIBUTING.md) para o passo a passo.
