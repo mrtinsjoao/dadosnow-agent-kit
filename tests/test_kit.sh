@@ -38,6 +38,7 @@ echo "install"
 R="$(new_repo a)"
 out="$("$KIT/install.sh" "$R")"
 check "files installed" '[[ -f $R/.claude/agents/dn-code-reviewer.md && -x $R/.dadosnow/gate.sh && -f $R/.claude/skills/dn-init/SKILL.md ]]'
+check "haiku agents installed" '[[ -f $R/.claude/agents/dn-git-ops.md && -f $R/.claude/agents/dn-monitor.md ]] && grep -q "^model: claude-haiku-5-5" $R/.claude/agents/dn-git-ops.md'
 check "hook installed" 'grep -q "dadosnow-kit gate" $R/.git/hooks/pre-push && [[ -x $R/.git/hooks/pre-push ]]'
 out="$("$KIT/install.sh" "$R")"
 check "reinstall is idempotent" 'grep -q "Done: 0 added, 0 replaced, 0 kept" <<<"$out" && [[ $(grep -c ">>> dadosnow-kit gate" $R/.git/hooks/pre-push) -eq 1 ]]'
@@ -51,9 +52,13 @@ git -C "$R" add -A && git -C "$R" commit -qm kit
 echo "gate"
 commit "$R" "x = 1" "clean change"
 check "clean push passes" 'push "$R"'
+GLOG="$R/.git/dadosnow/gate.jsonl"
+check "gate run logged as allow" 'tail -1 $GLOG | jq -e ".result == \"allow\" and .verdicts[\"dn-code-reviewer\"] == \"PASS\" and (.lines > 0)" >/dev/null'
 commit "$R" "token = 'SECRET_FOR_TEST'" "leak"
 err="$(git -C "$R" push 2>&1 >/dev/null)"
 check "push with finding is blocked by the gate" '[[ $? -ne 0 ]] && grep -q "push blocked" <<<"$err"'
+check "blocked run logged as block" 'tail -1 $GLOG | jq -e ".result == \"block\"" >/dev/null'
+check "gate log stays out of the work tree" '[[ -z "$(git -C $R status --porcelain)" ]]'
 check "DN_GATE=off skips" 'DN_GATE=off push "$R"'
 commit "$R" "y = 2" "another"
 mkdir -p "$WORK/minbin"
@@ -94,7 +99,7 @@ echo "uninstall"
 "$KIT/install.sh" "$H" >/dev/null
 echo "# mine" >> "$H/.claude/skills/dn-plan/SKILL.md"
 out="$("$KIT/uninstall.sh" "$H")"
-check "unedited kit files removed" '[[ ! -f $H/.claude/agents/dn-code-reviewer.md && ! -f $H/.dadosnow/gate.sh ]]'
+check "unedited kit files removed" '[[ ! -f $H/.claude/agents/dn-code-reviewer.md && ! -f $H/.claude/agents/dn-git-ops.md && ! -f $H/.claude/agents/dn-monitor.md && ! -f $H/.dadosnow/gate.sh ]]'
 check "edited kit file moved to backup" '[[ ! -f $H/.claude/skills/dn-plan/SKILL.md ]] && grep -rq "# mine" $H/.dadosnow/backup/'
 check "user hook restored without the block" '! grep -q dadosnow-kit $H/.git/hooks/pre-push && grep -q "echo mine" $H/.git/hooks/pre-push'
 "$KIT/uninstall.sh" "$R" >/dev/null
