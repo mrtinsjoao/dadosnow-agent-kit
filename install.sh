@@ -5,13 +5,14 @@
 #
 # Copies the kit into TARGET_DIR (default: current directory):
 #   .claude/skills/dn-*      skills: dn-init, dn-plan, dn-tdd, dn-review
-#   .claude/agents/dn-*      read-only subagents: explorer and two reviewers
+#   .claude/agents/dn-*      subagents: explorer, two reviewers, git-ops, monitor
 #   .dadosnow/               gate script, model reference, templates
 #   pre-push hook block      the review gate (skip with --no-gate)
 #
-# Additive and idempotent: an existing file that differs from the kit is kept
-# unless --force is given, and then it is backed up first under
-# .dadosnow/backup/<timestamp>/. Run it again any time to update.
+# Additive and idempotent. Files unchanged since the last install are updated;
+# a file you edited is kept unless --force is given, and then it is backed up
+# first under .dadosnow/backup/<timestamp>/. .dadosnow/manifest holds the
+# hashes that tell the two apart. Run it again any time to update.
 
 set -euo pipefail
 
@@ -34,26 +35,46 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$TARGET/.dadosnow/backup/$STAMP"
 added=0; updated=0; kept=0
 
+# .dadosnow/manifest records the hash of every file as the kit installed it,
+# so a later install can tell "unchanged since install" (safe to update) from
+# "edited by you" (kept unless --force).
+MANIFEST="$TARGET/.dadosnow/manifest"
+sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+installed_hash() { [[ -f "$MANIFEST" ]] && awk -v p="$1" '$2 == p {print $1; exit}' "$MANIFEST" || true; }
+NEW_MANIFEST="$(mktemp)"; trap 'rm -f "$NEW_MANIFEST"' EXIT
+
 install_file() {  # $1 = path relative to kit/
-  local src="$KIT_DIR/kit/$1" dst="$TARGET/$1"
+  local src="$KIT_DIR/kit/$1" dst="$TARGET/$1" was
   mkdir -p "$(dirname "$dst")"
+  was="$(installed_hash "$1")"
   if [[ ! -e "$dst" ]]; then
     cp "$src" "$dst"; added=$((added+1)); echo "  + $1"
   elif cmp -s "$src" "$dst"; then
     :
+  elif [[ -n "$was" && "$(sha "$dst")" == "$was" ]]; then
+    cp "$src" "$dst"; updated=$((updated+1)); echo "  ~ $1 (updated)"
   elif (( FORCE )); then
     mkdir -p "$BACKUP/$(dirname "$1")"; cp "$dst" "$BACKUP/$1"; cp "$src" "$dst"
     updated=$((updated+1)); echo "  ~ $1 (old copy in .dadosnow/backup/$STAMP/)"
   else
     kept=$((kept+1)); echo "  = $1 (yours differs, kept — use --force to replace)"
   fi
+  if cmp -s "$src" "$dst"; then printf '%s  %s\n' "$(sha "$dst")" "$1" >> "$NEW_MANIFEST"
+  elif [[ -n "$was" ]]; then printf '%s  %s\n' "$was" "$1" >> "$NEW_MANIFEST"; fi
 }
 
 echo "DadosNow kit $KIT_VERSION -> $TARGET"
+# A 0.1.0 install has VERSION but no manifest, so every changed kit file looks
+# user-edited and would be kept. Say so up front instead of a silent partial upgrade.
+LEGACY=0
+[[ -f "$TARGET/.dadosnow/VERSION" && ! -f "$MANIFEST" && $FORCE -eq 0 ]] && LEGACY=1
 cd "$KIT_DIR/kit"
 while IFS= read -r f; do install_file "${f#./}"; done < <(find . -type f ! -path './hooks/*' | sort)
 chmod +x "$TARGET/.dadosnow/gate.sh"
-echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"
+# A 0.1.0 tree keeps its VERSION until --force actually updates it; with a
+# manifest, kept files are the user's own edits and VERSION moves on.
+if (( ! LEGACY || kept == 0 )); then echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"; fi
+cp "$NEW_MANIFEST" "$MANIFEST"
 
 # Backups stay out of git.
 GI="$TARGET/.gitignore"
@@ -111,6 +132,13 @@ fi
 
 echo
 echo "Done: $added added, $updated replaced, $kept kept."
+if (( LEGACY && kept > 0 )); then
+  echo
+  echo "  ! No .dadosnow/manifest found: this project was installed by kit 0.1.0, which"
+  echo "    did not record hashes, so the installer cannot tell your edits from old kit"
+  echo "    files. Run once with --force to update; anything replaced is backed up first"
+  echo "    under .dadosnow/backup/. Until then the kept files stay on the old version."
+fi
 echo
 echo "Next:"
 echo "  1. Open Claude Code in $TARGET and run /dn-init — it drafts AGENTS.md,"

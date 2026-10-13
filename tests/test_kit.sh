@@ -38,6 +38,7 @@ echo "install"
 R="$(new_repo a)"
 out="$("$KIT/install.sh" "$R")"
 check "files installed" '[[ -f $R/.claude/agents/dn-code-reviewer.md && -x $R/.dadosnow/gate.sh && -f $R/.claude/skills/dn-init/SKILL.md ]]'
+check "haiku agents installed" '[[ -f $R/.claude/agents/dn-git-ops.md && -f $R/.claude/agents/dn-monitor.md ]] && grep -q "^model: claude-haiku-5-5" $R/.claude/agents/dn-git-ops.md'
 check "hook installed" 'grep -q "dadosnow-kit gate" $R/.git/hooks/pre-push && [[ -x $R/.git/hooks/pre-push ]]'
 out="$("$KIT/install.sh" "$R")"
 check "reinstall is idempotent" 'grep -q "Done: 0 added, 0 replaced, 0 kept" <<<"$out" && [[ $(grep -c ">>> dadosnow-kit gate" $R/.git/hooks/pre-push) -eq 1 ]]'
@@ -46,15 +47,44 @@ out="$("$KIT/install.sh" "$R")"
 check "edited file kept without --force" 'grep -q "# mine" $R/.claude/agents/dn-explorer.md'
 out="$("$KIT/install.sh" "$R" --force)"
 check "--force replaces and backs up" '! grep -q "# mine" $R/.claude/agents/dn-explorer.md && grep -rq "# mine" $R/.dadosnow/backup/'
+echo "upgrade"
+K2="$WORK/kit2"; cp -r "$KIT" "$K2"
+echo "# changed in a newer kit" >> "$K2/kit/.dadosnow/models.yaml"
+echo "# changed in a newer kit" >> "$K2/kit/.claude/skills/dn-plan/SKILL.md"
+echo "# mine" >> "$R/.claude/skills/dn-plan/SKILL.md"
+out="$("$K2/install.sh" "$R")"
+check "unedited file updated to the newer kit" 'grep -q "changed in a newer kit" $R/.dadosnow/models.yaml && grep -q "models.yaml (updated)" <<<"$out"'
+check "edited file still kept on upgrade" 'grep -q "# mine" $R/.claude/skills/dn-plan/SKILL.md && ! grep -q "changed in a newer kit" $R/.claude/skills/dn-plan/SKILL.md'
+check "manifest written" '[[ -s $R/.dadosnow/manifest ]] && grep -q " .dadosnow/gate.sh$" $R/.dadosnow/manifest'
+echo "upgrade from 0.1.0 (no manifest)"
+L="$(new_repo legacy)"
+"$KIT/install.sh" "$L" >/dev/null && rm -f "$L/.dadosnow/manifest" && echo "0.1.0" > "$L/.dadosnow/VERSION"
+out="$("$K2/install.sh" "$L")"
+check "0.1.0: changed kit file kept, with a --force notice" 'grep -q "models.yaml (yours differs" <<<"$out" && grep -q "No .dadosnow/manifest found" <<<"$out" && ! grep -q "changed in a newer kit" $L/.dadosnow/models.yaml'
+check "0.1.0: VERSION not stamped while files are kept" 'grep -qx "0.1.0" $L/.dadosnow/VERSION'
+out="$("$K2/install.sh" "$L" --force)"
+check "0.1.0: --force updates, backs up and writes the manifest" 'grep -q "changed in a newer kit" $L/.dadosnow/models.yaml && ls $L/.dadosnow/backup/*/.dadosnow/models.yaml >/dev/null 2>&1 && [[ -s $L/.dadosnow/manifest ]] && ! grep -qx "0.1.0" $L/.dadosnow/VERSION'
+"$KIT/install.sh" "$R" --force >/dev/null
 git -C "$R" add -A && git -C "$R" commit -qm kit
 
 echo "gate"
 commit "$R" "x = 1" "clean change"
 check "clean push passes" 'push "$R"'
+GLOG="$R/.git/dadosnow/gate.jsonl"
+check "gate run logged as allow" 'tail -1 $GLOG | jq -e ".result == \"allow\" and .verdicts[\"dn-code-reviewer\"] == \"PASS\" and (.lines > 0)" >/dev/null'
 commit "$R" "token = 'SECRET_FOR_TEST'" "leak"
 err="$(git -C "$R" push 2>&1 >/dev/null)"
 check "push with finding is blocked by the gate" '[[ $? -ne 0 ]] && grep -q "push blocked" <<<"$err"'
+check "blocked run logged as block" 'tail -1 $GLOG | jq -e ".result == \"block\"" >/dev/null'
+check "gate log stays out of the work tree" '[[ -z "$(git -C $R status --porcelain)" ]]'
 check "DN_GATE=off skips" 'DN_GATE=off push "$R"'
+commit "$R" "w = 4" "big"
+check "too-large diff allowed and logged" 'DN_GATE_MAX_LINES=0 push "$R" && tail -1 $GLOG | jq -e ".result == \"skipped-too-large\"" >/dev/null'
+echo "v = 5" > "$R/other.py"; git -C "$R" add other.py; git -C "$R" commit -qm "log dir read-only"
+chmod 555 "$R/.git/dadosnow"
+err="$(git -C "$R" push 2>&1 >/dev/null)"; rc=$?
+chmod 755 "$R/.git/dadosnow"
+check "log write failure: push allowed, no error printed" '[[ $rc -eq 0 ]] && ! grep -qi "permission denied" <<<"$err"'
 commit "$R" "y = 2" "another"
 mkdir -p "$WORK/minbin"
 for t in git bash sh cat sed awk grep head tail mktemp rm mkdir dirname basename tr od wc date cmp find sort env; do
@@ -94,7 +124,7 @@ echo "uninstall"
 "$KIT/install.sh" "$H" >/dev/null
 echo "# mine" >> "$H/.claude/skills/dn-plan/SKILL.md"
 out="$("$KIT/uninstall.sh" "$H")"
-check "unedited kit files removed" '[[ ! -f $H/.claude/agents/dn-code-reviewer.md && ! -f $H/.dadosnow/gate.sh ]]'
+check "unedited kit files removed" '[[ ! -f $H/.claude/agents/dn-code-reviewer.md && ! -f $H/.claude/agents/dn-git-ops.md && ! -f $H/.claude/agents/dn-monitor.md && ! -f $H/.dadosnow/gate.sh ]]'
 check "edited kit file moved to backup" '[[ ! -f $H/.claude/skills/dn-plan/SKILL.md ]] && grep -rq "# mine" $H/.dadosnow/backup/'
 check "user hook restored without the block" '! grep -q dadosnow-kit $H/.git/hooks/pre-push && grep -q "echo mine" $H/.git/hooks/pre-push'
 "$KIT/uninstall.sh" "$R" >/dev/null

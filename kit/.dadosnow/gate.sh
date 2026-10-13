@@ -11,6 +11,10 @@
 #   DN_GATE_MAX_LINES=N    skip diffs larger than N changed lines (default 3000)
 #   DN_GATE_TIMEOUT=S      seconds per reviewer (default 600)
 #
+# Each reviewed push (and each diff skipped as too large) appends one JSON
+# line to <git-dir>/dadosnow/gate.jsonl, inside .git so it is never
+# committed. dn-monitor reads it. A write error never blocks.
+#
 # Called by the pre-push hook with the hook's stdin; also works without it.
 # Exit codes: 0 = allow, 10 = blocked by a reviewer. The hook blocks only on
 # 10, so a crash or a broken interpreter can never block a push.
@@ -62,6 +66,14 @@ fi
 [[ ${#RANGES[@]} -eq 0 ]] && { say "could not find a base to compare — push allowed"; exit 0; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+START="$(date +%s)"
+log_run() {  # $1 = result (allow|block|skipped-too-large), $2 = verdicts as JSON object
+  local dir; dir="$(git rev-parse --absolute-git-dir 2>/dev/null)/dadosnow" || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  { printf '{"ts":"%s","ranges":"%s","lines":%s,"result":"%s","verdicts":%s,"seconds":%s}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${RANGES[*]}" "$LINES" "$1" "$2" "$(( $(date +%s) - START ))" \
+      >> "$dir/gate.jsonl"; } 2>/dev/null || true
+}
 for r in "${RANGES[@]}"; do git diff --no-color "$r" -- . "${EXCLUDES[@]}"; done > "$TMP/diff"
 
 LINES=0
@@ -72,6 +84,7 @@ done
 [[ "$LINES" -eq 0 ]] && { say "no reviewable changes"; exit 0; }
 if (( LINES > MAX_LINES )); then
   say "diff has $LINES changed lines (> $MAX_LINES) — too large for the gate, push allowed. Run /dn-review on smaller pieces."
+  log_run skipped-too-large '{}'
   exit 0
 fi
 
@@ -88,10 +101,11 @@ done
 wait
 
 # 3. Read the verdicts.
-BLOCKED=0
+BLOCKED=0; VJSON=""
 for a in "${REVIEWERS[@]}"; do
   [[ -f "$TMP/$a.out" ]] || continue
   verdict="$(grep -E '^VERDICT: (PASS|BLOCK)' "$TMP/$a.out" | tail -1 | awk '{print $2}')"
+  VJSON="$VJSON${VJSON:+,}\"$a\":\"${verdict:-none}\""
   printf '\n----- %s -----\n' "$a" >&2
   if [[ -z "$verdict" ]]; then
     say "$a returned no verdict (error or timeout) — not blocking"
@@ -104,9 +118,11 @@ for a in "${REVIEWERS[@]}"; do
 done
 
 if (( BLOCKED )); then
+  log_run block "{$VJSON}"
   printf '\n' >&2
   say "push blocked: fix the P1 findings above, or push once with DN_GATE=off git push"
   exit 10
 fi
+log_run allow "{$VJSON}"
 say "PASS"
 exit 0

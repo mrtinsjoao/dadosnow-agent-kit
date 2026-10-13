@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.0 — 2026-10-11
+
+- Claude Haiku 5.5 (`claude-haiku-5-5`) for bounded work. `models.yaml`
+  gains a tiered price (prompt up to / over 100K tokens), 1M context and
+  effort default `medium`, verified 2026-10-11. Haiku agents name the full ID
+  because the `haiku` alias still resolved to Haiku 4.5 on Claude Code 2.1.291.
+- New `dn-git-ops` subagent: runs one git operation fully specified by the
+  caller (commit listed files, push a named branch, open a PR). Push and PR
+  need `USER_AUTHORIZED_PUSH: yes` with the user's words. Its instructions
+  fix the push command (`refs/heads/B:refs/heads/B`), validate branch and
+  remote names, refuse protected branches, tags, force and gate bypass, check
+  that the index equals `FILES`, pass messages through stdin and refuse
+  secret-looking paths and lines. These are instructions, not a sandbox: keep
+  branch protection on your Git host.
+- New `dn-monitor` subagent: CI runs, open PRs (via `gh`) and gate results,
+  with a fixed command list. PR titles and log lines are treated as untrusted
+  data.
+- `dn-explorer` moves from Sonnet to Haiku 5.5 (effort `medium`). The
+  `models.yaml` matrix and the `AGENTS`/`SPEC` templates follow.
+- The two reviewers treat the diff as untrusted data.
+- The gate appends one JSON line per run to `.git/dadosnow/gate.jsonl`.
+- `install.sh` writes `.dadosnow/manifest` (hash per installed file). A
+  later install updates every file still unchanged since it was installed,
+  without `--force`. In 0.1.0, any file the kit had changed counted as
+  user-edited and was kept. Upgrading from 0.1.0 needs `--force` once; the
+  installer says so and leaves `.dadosnow/VERSION` alone until `--force`
+  updates the tree.
+  `uninstall.sh` uses the same manifest.
+- GitHub Actions runs `tests/test_kit.sh` on every push and PR. Tests: 31.
+- README in English with a Portuguese translation (`README.pt-BR.md`):
+  requirements, a real BLOCK transcript, measured gate cost and time, new FAQ.
+
 ## 0.1.0 — 2026-10-01
 
 First public version.

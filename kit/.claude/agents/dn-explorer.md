@@ -2,7 +2,7 @@
 name: dn-explorer
 description: Read-only codebase explorer. Use when answering a question means reading more than a handful of files, or when the output would be long and only the conclusion matters. Returns a short report with file paths and line numbers, never file dumps.
 tools: Read, Grep, Glob
-model: sonnet
+model: claude-haiku-5-5
 effort: medium
 ---
 
