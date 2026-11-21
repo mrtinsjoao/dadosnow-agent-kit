@@ -12,11 +12,19 @@ bad()  { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 # Stub claude: BLOCK when the diff on stdin contains the marker, PASS otherwise.
-# STUB_MODE=crash makes it fail without a verdict.
+# STUB_MODE: crash = fail without a verdict; p1pass = a P1 finding under a PASS
+# verdict; noverdict = answer with no verdict line; slow = sleep past a short
+# timeout. Each call appends a line to $STUB_CALLS when that is set.
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/claude" <<'EOF'
 #!/usr/bin/env bash
-[[ "${STUB_MODE:-}" == crash ]] && { echo "boom" >&2; exit 3; }
+[[ -n "${STUB_CALLS:-}" ]] && echo call >> "$STUB_CALLS"
+case "${STUB_MODE:-}" in
+  crash) echo "boom" >&2; exit 3 ;;
+  p1pass) cat >/dev/null; echo "- [P1] data loss — app.py:2"; echo "VERDICT: PASS"; exit 0 ;;
+  noverdict) cat >/dev/null; echo "I looked at it."; exit 0 ;;
+  slow) cat >/dev/null; sleep 5; echo "VERDICT: PASS"; exit 0 ;;
+esac
 if grep -q 'SECRET_FOR_TEST' ; then echo "- [P1] secret"; echo "VERDICT: BLOCK"; else echo "(no findings)"; echo "VERDICT: PASS"; fi
 EOF
 chmod +x "$WORK/bin/claude"
@@ -95,6 +103,74 @@ commit "$R" "z = 3" "crash case"
 check "claude crash -> allowed" 'STUB_MODE=crash push "$R"'
 git -C "$R" push -q origin main:tmp-branch >/dev/null 2>&1
 check "branch deletion -> allowed" 'push "$R" origin :tmp-branch'
+
+kit_repo() {  # $1 = name -> repo with the kit installed and committed
+  local r; r="$(new_repo "$1")"
+  "$KIT/install.sh" "$r" >/dev/null && git -C "$r" add -A && git -C "$r" commit -qm kit && git -C "$r" push -q
+  echo "$r"
+}
+perr() { ERR="$(git -C "$1" push "${@:2}" 2>&1 >/dev/null)"; RC=$?; }   # push, keep stderr and exit code
+
+echo "severity"
+S="$(kit_repo sev)"; SLOG="$S/.git/dadosnow/gate.jsonl"
+commit "$S" "a = 1" "p1 under pass"
+STUB_MODE=p1pass perr "$S"
+check "a P1 finding blocks even under VERDICT: PASS" '[[ $RC -ne 0 ]] && grep -q "P1 finding" <<<"$ERR"'
+check "that run is logged as block" 'tail -1 $SLOG | jq -e ".result == \"block\"" >/dev/null'
+
+echo "strict mode"
+commit "$S" "b = 2" "strict cases"
+STUB_MODE=crash perr "$S"; DEFAULT_RC=$RC
+git -C "$S" reset -q --hard HEAD~1 >/dev/null; git -C "$S" push -q -f >/dev/null 2>&1; commit "$S" "b = 2" "strict cases"
+check "default: a reviewer error still lets the push through" '[[ $DEFAULT_RC -eq 0 ]]'
+STUB_MODE=crash DN_GATE_STRICT=1 perr "$S"
+check "strict: a reviewer error blocks" '[[ $RC -ne 0 ]] && grep -q "strict" <<<"$ERR"'
+STUB_MODE=noverdict DN_GATE_STRICT=1 perr "$S"
+check "strict: an answer with no verdict blocks" '[[ $RC -ne 0 ]]'
+STUB_MODE=slow DN_GATE_STRICT=1 DN_GATE_TIMEOUT=1 perr "$S"
+check "strict: a timeout blocks" '[[ $RC -ne 0 ]]'
+DN_GATE_STRICT=1 DN_GATE_MAX_LINES=0 perr "$S"
+check "strict: a diff over the limit blocks" '[[ $RC -ne 0 ]] && grep -q "too large" <<<"$ERR"'
+check "strict block is logged with its reason" 'tail -1 $SLOG | jq -e ".result == \"block-too-large\"" >/dev/null'
+PATH="$WORK/minbin" DN_GATE_STRICT=1 perr "$S"
+check "strict: no Claude Code blocks" '[[ $RC -ne 0 ]]'
+DN_GATE_STRICT=1 perr "$S"
+check "strict: a clean review still passes" '[[ $RC -eq 0 ]]'
+
+echo "secret scan"
+FAKE_KEY="AKIA$(printf 'Q%.0s' $(seq 1 16))"          # assembled here so this file holds no match
+FAKE_PAT="ghp_$(printf 'a%.0s' $(seq 1 36))"
+C="$(kit_repo sec)"; CLOG="$C/.git/dadosnow/gate.jsonl"
+commit "$C" "KEY = '$FAKE_KEY'" "leak"
+STUB_CALLS="$WORK/calls1" perr "$C"
+check "a key in an added line blocks the push" '[[ $RC -ne 0 ]] && grep -q "credential" <<<"$ERR"'
+check "no reviewer is called and the diff is not sent" '[[ ! -e "$WORK/calls1" ]]'
+check "the file and line are named, the value is not printed" 'grep -q "app.py:" <<<"$ERR" && ! grep -q "$FAKE_KEY" <<<"$ERR"'
+check "the run is logged as block-secret" 'tail -1 $CLOG | jq -e ".result == \"block-secret\"" >/dev/null'
+check "DN_GATE_SECRETS=off turns the scan off" 'DN_GATE_SECRETS=off push "$C"'
+echo "T = '$FAKE_PAT'" > "$C/tmp.py"; git -C "$C" add tmp.py; git -C "$C" commit -qm add
+git -C "$C" rm -q tmp.py; git -C "$C" commit -qm remove; commit "$C" "c = 3" "more"
+perr "$C"
+check "a token added and removed inside the same push is still caught" '[[ $RC -ne 0 ]] && grep -q "tmp.py" <<<"$ERR"'
+DN_GATE_SECRETS=off push "$C"
+sed -i.bak "/$FAKE_KEY/d" "$C/app.py"; rm -f "$C/app.py.bak"; git -C "$C" commit -qam "remove the key"
+STUB_CALLS="$WORK/calls2" perr "$C"
+check "removing an old key is not a new leak" '[[ $RC -eq 0 && -s "$WORK/calls2" ]]'
+commit "$C" "path = 'disk-$(printf 'a%.0s' $(seq 1 40))'" "long id"
+check "a long id after a word ending in sk- is not a key" 'push "$C"'
+
+echo "worktrees"
+W="$(kit_repo wt)"; WLOG="$W/.git/dadosnow/gate.jsonl"
+git -C "$W" worktree add -q -b feat/wt "$WORK/wt-side" >/dev/null 2>&1
+echo "w = 1" >> "$WORK/wt-side/app.py"; git -C "$WORK/wt-side" commit -qam "from worktree"
+before="$(wc -l < "$WLOG" 2>/dev/null || echo 0)"
+ERR="$(git -C "$WORK/wt-side" push -u origin feat/wt 2>&1 >/dev/null)"; RC=$?
+check "a clean push from a worktree is reviewed and passes" '[[ $RC -eq 0 ]] && grep -q "reviewing" <<<"$ERR"'
+check "the worktree run lands in the shared gate log" '[[ $(wc -l < "$WLOG") -gt $before ]]'
+echo "t = 'SECRET_FOR_TEST'" >> "$WORK/wt-side/app.py"; git -C "$WORK/wt-side" commit -qam "finding"
+ERR="$(git -C "$WORK/wt-side" push 2>&1 >/dev/null)"; RC=$?
+check "a push with a finding from a worktree is blocked" '[[ $RC -ne 0 ]] && grep -q "push blocked" <<<"$ERR"'
+check "gate.sh --log prints the shared log from the worktree" '(cd "$WORK/wt-side" && bash .dadosnow/gate.sh --log | tail -1 | jq -e ".result == \"block\"") >/dev/null'
 
 echo "existing hook"
 H="$(new_repo b)"
