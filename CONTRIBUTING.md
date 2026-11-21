@@ -8,8 +8,10 @@ Obrigado por ajudar a melhorar o kit.
 2. Mantenha o PR pequeno e focado em uma coisa.
 3. Rode as checagens:
    ```bash
-   bash -n install.sh uninstall.sh kit/.dadosnow/gate.sh
+   bash -n install.sh uninstall.sh kit/.dadosnow/gate.sh kit/.dadosnow/agent-guard.sh
+   shellcheck -S warning install.sh uninstall.sh kit/.dadosnow/*.sh tests/*.sh
    bash tests/test_kit.sh
+   bash tests/name_scan.sh   # lê a lista de ~/.dadosnow/denylist; sem lista, é pulado
    cd examples/demo-app && python3 -m unittest -q
    ```
 4. Se mudou o instalador ou o gate, rode o roteiro de
@@ -21,7 +23,8 @@ Obrigado por ajudar a melhorar o kit.
 ## Regras do projeto
 
 - O instalador é aditivo: nunca sobrescreve arquivo do usuário sem `--force`.
-- O gate é fail-open: só `VERDICT: BLOCK` bloqueia o push.
+- O gate é fail-open por padrão: bloqueiam o push um `VERDICT: BLOCK`, um achado P1 e um padrão de credencial em linha adicionada. `DN_GATE_STRICT=1` é opcional e inverte o resto.
+- Nenhum nome de cliente, empresa, pessoa ou projeto interno entra no repositório; a lista conferida pelo `tests/name_scan.sh` fica fora dele.
 - Os subagentes não editam código. O explorador e os revisores são só
   leitura. O `dn-monitor` tem instrução de rodar só os comandos de leitura
   listados no arquivo dele. O `dn-git-ops` tem instrução de rodar só git, e só

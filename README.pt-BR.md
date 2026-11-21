@@ -8,7 +8,7 @@ Ele planeja antes de mexer no código, roda testes de verdade antes de dizer
 
 [![tests](https://github.com/mrtinsjoao/dadosnow-agent-kit/actions/workflows/test.yml/badge.svg)](https://github.com/mrtinsjoao/dadosnow-agent-kit/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0E7C86.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-0.2.0-0E7C86.svg)
+![Version](https://img.shields.io/badge/version-0.3.0-0E7C86.svg)
 ![Claude Code](https://img.shields.io/badge/feito%20para-Claude%20Code-5B6B67.svg)
 ![Modelos verificados](https://img.shields.io/badge/modelos%20verificados-2026--10--11-5B6B67.svg)
 
@@ -73,7 +73,7 @@ com o código. Nada roda em servidor de terceiros além do próprio Claude Code.
 |---|---|
 | [Claude Code](https://code.claude.com) instalado e logado | Assinatura ou API. O gate chama o `claude` local |
 | `git` e `bash` | No Windows, use Git Bash ou WSL |
-| `jq` | Usado pelo `dn-monitor` para ler o log do gate; fora isso, opcional |
+| `jq` | Usado pelo `dn-monitor` para ler o log do gate e pelo guard dos agentes; sem ele o guard não é ligado |
 | GitHub CLI `gh` logado | Só para a parte de CI/PR do `dn-monitor` e para o `dn-git-ops` abrir PR |
 | `timeout` (GNU coreutils) | Opcional. Sem ele, os revisores rodam sem limite de tempo. No macOS: `brew install coreutils` |
 
@@ -152,18 +152,22 @@ flowchart LR
 | `.claude/skills/dn-plan` | skill | Plano curto antes de mudanças grandes, com uma checagem por passo |
 | `.claude/skills/dn-tdd` | skill | Vermelho → verde → refatorar, com teste real antes do "pronto" |
 | `.claude/skills/dn-review` | skill | Dois revisores em paralelo no diff atual, com um veredito só |
+| `.claude/skills/dn-lab` | skill | Testa uma ferramenta ou ideia em uma bancada fora do repositório e devolve um de quatro vereditos |
 | `.claude/agents/dn-explorer` | subagente (Haiku 5.5) | Lê o código pesado e devolve só a conclusão, com arquivo e linha |
 | `.claude/agents/dn-code-reviewer` | subagente (Sonnet) | Bugs de lógica, contratos quebrados, comportamento sem teste |
 | `.claude/agents/dn-security-reviewer` | subagente (Sonnet) | Segredos, injeção, autorização, exposição de dados |
 | `.claude/agents/dn-git-ops` | subagente (Haiku 5.5) | Executa uma operação git que quem chamou definiu por completo: commit dos arquivos listados, push de uma branch nomeada, abertura de PR |
-| `.claude/agents/dn-monitor` | subagente (Haiku 5.5) | Status de CI, PRs abertos e resultados recentes do gate, usando só os comandos de leitura listados no arquivo dele |
-| `.dadosnow/gate.sh` + hook `pre-push` | script | Roda os dois revisores em cada push e registra cada rodada |
+| `.claude/agents/dn-monitor` | subagente (Haiku 5.5) | Status de CI, triagem dos PRs abertos por tamanho, arquivos de risco e checks, e resultados recentes do gate, usando só os comandos de leitura listados no arquivo dele |
+| `.dadosnow/gate.sh` + hook `pre-push` | script | Procura credenciais no push, roda os dois revisores e registra cada rodada |
+| `.dadosnow/agent-guard.sh` + uma entrada em `.claude/settings.json` | hook | Nega qualquer comando fora das listas do `dn-monitor` e do `dn-git-ops` (precisa de `jq`) |
 | `.dadosnow/models.yaml` | referência | Modelos, preços e a matriz atividade → modelo × effort, com data de verificação |
 | `.dadosnow/*.template.md` | templates | Base do `AGENTS.md` e do `SPEC.md` |
 
 O explorador e os dois revisores são **só de leitura** (`Read`, `Grep`,
-`Glob`). O `dn-monitor` tem instrução de rodar só os comandos de leitura listados no arquivo
-dele (`gh pr list`, `gh run list` e a leitura do log do gate). O `dn-git-ops`
+`Glob`). O `dn-monitor` roda só os comandos de leitura listados no arquivo
+dele; desde a 0.3.0 o hook `agent-guard.sh` nega qualquer outro comando que ele
+ou o `dn-git-ops` tentem rodar. O guard confere a linha de comando, não o
+conteúdo dos arquivos, e não é um sandbox. O `dn-git-ops`
 tem instrução de rodar git e mais nada. Nenhum deles edita o seu código.
 
 ### Agentes delimitados: quem decide e quem executa
@@ -200,20 +204,27 @@ branch no seu Git host. Esse é o controle que vale para qualquer um que dê pus
    paralelo**, cada um em contexto limpo, com `claude -p --agent`.
 3. Cada um termina com `VERDICT: PASS` ou `VERDICT: BLOCK`. Só um achado
    **P1** bloqueia, ou seja, algo que vai quebrar, perder dado ou vazar
-   segredo.
+   segredo. Revisor que lista um P1 e mesmo assim escreve PASS conta como
+   BLOCK. Antes de qualquer envio a um modelo, as linhas adicionadas de cada
+   commit do push passam por uma busca de padrões de credencial; um achado
+   **bloqueia o push**, mostra arquivo e linha e nunca imprime o valor.
 4. Tudo o que não for um BLOCK claro **deixa o push seguir**, com aviso: Claude
    Code ausente, erro, timeout ou diff grande demais. O gate nunca te prende
-   por falha dele.
+   por falha dele. Quem prefere o contrário define `DN_GATE_STRICT=1`: aí
+   cada um desses casos bloqueia o push.
 5. Cada rodada acrescenta uma linha JSON em `.git/dadosnow/gate.jsonl`, com
    hora, intervalo, linhas, resultado, veredito por revisor e segundos. O log
-   fica dentro do `.git` e por isso nunca é commitado. O `dn-monitor` lê
-   esse arquivo.
+   fica dentro do `.git` principal do repositório: nunca é commitado e as
+   rodadas de todos os worktrees caem no mesmo arquivo. O `dn-monitor` lê com
+   `bash .dadosnow/gate.sh --log`.
 
 | Variável | Efeito |
 |---|---|
 | `DN_GATE=off git push` | Pula o gate neste push |
 | `DN_GATE_MAX_LINES=5000` | Muda o limite de linhas revisadas (padrão: 3000) |
 | `DN_GATE_TIMEOUT=900` | Segundos por revisor (padrão: 600) |
+| `DN_GATE_STRICT=1` | Falha fechada: sem Claude Code, erro, timeout, sem veredito ou diff acima do limite bloqueiam o push |
+| `DN_GATE_SECRETS=off git push` | Pula a busca de credenciais neste push (falso positivo) |
 
 > **O gate é uma ajuda, não um controle de segurança.** Um modelo lê o diff, e
 > um conteúdo malicioso no diff pode tentar influenciar o veredito (prompt
@@ -537,9 +548,10 @@ descartável. O roteiro inclui um push com uma chave falsa, que o gate bloqueia.
 | Versão | O que entra |
 |---|---|
 | 0.1 | Instalador, `/dn-init`, 4 skills, 3 subagentes, gate com 2 revisores, demo |
-| **0.2** (atual) | Claude Haiku 5.5 para trabalho delimitado (`dn-git-ops`, `dn-monitor`, `dn-explorer`), log do gate, testes no CI, README em inglês |
-| 0.3 | Skills de debug e refatoração, revisor de testes, gate no CI |
-| 0.4 | Notas testadas para Codex, Cursor e Pi, conforme os pedidos |
+| 0.2 | Claude Haiku 5.5 para trabalho delimitado (`dn-git-ops`, `dn-monitor`, `dn-explorer`), log do gate, testes no CI, README em inglês |
+| **0.3** (atual) | Busca de credenciais e modo estrito no gate, P1 sempre bloqueia, guarda de comandos dos agentes delimitados, triagem de PR no `dn-monitor`, skill de bancada `dn-lab` |
+| 0.4 | Skills de debug e refatoração, revisor de testes, gate no CI |
+| 0.5 | Notas testadas para Codex, Cursor e Pi, conforme os pedidos |
 
 As issues decidem o que entra em cada versão. Pedidos com exemplo real passam
 na frente.
