@@ -47,9 +47,11 @@ R="$(new_repo a)"
 out="$("$KIT/install.sh" "$R")"
 check "files installed" '[[ -f $R/.claude/agents/dn-code-reviewer.md && -x $R/.dadosnow/gate.sh && -f $R/.claude/skills/dn-init/SKILL.md ]]'
 check "haiku agents installed" '[[ -f $R/.claude/agents/dn-git-ops.md && -f $R/.claude/agents/dn-monitor.md ]] && grep -q "^model: claude-haiku-5-5" $R/.claude/agents/dn-git-ops.md'
+check "agent guard installed and wired once" '[[ -x $R/.dadosnow/agent-guard.sh ]] && [[ $(jq "[.hooks.PreToolUse[] | select(.matcher == \"Bash\")] | length" $R/.claude/settings.json) -eq 1 ]]'
 check "hook installed" 'grep -q "dadosnow-kit gate" $R/.git/hooks/pre-push && [[ -x $R/.git/hooks/pre-push ]]'
 out="$("$KIT/install.sh" "$R")"
 check "reinstall is idempotent" 'grep -q "Done: 0 added, 0 replaced, 0 kept" <<<"$out" && [[ $(grep -c ">>> dadosnow-kit gate" $R/.git/hooks/pre-push) -eq 1 ]]'
+check "reinstall does not wire the guard twice" '[[ $(grep -c agent-guard.sh $R/.claude/settings.json) -eq 1 ]]'
 echo "# mine" >> "$R/.claude/agents/dn-explorer.md"
 out="$("$KIT/install.sh" "$R")"
 check "edited file kept without --force" 'grep -q "# mine" $R/.claude/agents/dn-explorer.md'
@@ -172,6 +174,43 @@ ERR="$(git -C "$WORK/wt-side" push 2>&1 >/dev/null)"; RC=$?
 check "a push with a finding from a worktree is blocked" '[[ $RC -ne 0 ]] && grep -q "push blocked" <<<"$ERR"'
 check "gate.sh --log prints the shared log from the worktree" '(cd "$WORK/wt-side" && bash .dadosnow/gate.sh --log | tail -1 | jq -e ".result == \"block\"") >/dev/null'
 
+echo "agent guard"
+GUARD="$KIT/kit/.dadosnow/agent-guard.sh"
+guard() {  # $1 = agent, $2 = command -> DEC is allow or deny, WHY the reason
+  local o; o="$(jq -cn --arg a "$1" --arg c "$2" '{agent_type:$a, tool_name:"Bash", tool_input:{command:$c}}' | bash "$GUARD")"
+  if [[ -z "$o" ]]; then DEC=allow; WHY=""; else DEC="$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$o")"; WHY="$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$o")"; fi
+}
+allows() { guard "$1" "$2"; [[ "$DEC" == allow ]]; }
+denies() { guard "$1" "$2"; [[ "$DEC" == deny ]]; }
+check "monitor: listing PRs and runs is allowed" 'allows dn-monitor "gh pr list --state open --json number,title" && allows dn-monitor "gh run list --limit 10 --json name,conclusion"'
+check "monitor: PR triage and run detail are allowed" 'allows dn-monitor "gh pr view 12 --json additions,deletions,changedFiles,files" && allows dn-monitor "gh pr checks 12" && allows dn-monitor "gh run view 99 --json conclusion,jobs"'
+check "monitor: the gate log piped through jq and tail is allowed" "allows dn-monitor \"bash .dadosnow/gate.sh --log | jq -c 'select(.result != \\\"allow\\\")' | tail -5\""
+check "monitor: merge, comment, rerun and api are denied" 'denies dn-monitor "gh pr merge 12" && denies dn-monitor "gh pr comment 12 -b hi" && denies dn-monitor "gh run rerun 99" && denies dn-monitor "gh api repos/x/y"'
+check "monitor: a second command after ; or && is denied" 'denies dn-monitor "gh run list; rm -rf x" && denies dn-monitor "gh run list && git push"'
+check "monitor: command substitution and redirection are denied" 'denies dn-monitor "tail -1 \$(cat x)" && denies dn-monitor "gh pr list > out.txt"'
+check "monitor: a forbidden command hidden after a pipe is denied" 'denies dn-monitor "gh pr list | sh"'
+check "a denial is valid JSON with a reason" '[[ "$WHY" == dn-guard:* ]]'
+check "git-ops: the fixed push form on a feature branch is allowed" 'allows dn-git-ops "git -C /r push origin refs/heads/feat/x:refs/heads/feat/x"'
+check "git-ops: force, other flags and a different destination are denied" 'denies dn-git-ops "git -C /r push --force origin refs/heads/feat/x:refs/heads/feat/x" && denies dn-git-ops "git -C /r push origin refs/heads/feat/x:refs/heads/other" && denies dn-git-ops "git -C /r push origin feat/x"'
+check "git-ops: protected branches are denied" 'denies dn-git-ops "git -C /r push origin refs/heads/main:refs/heads/main" && denies dn-git-ops "git -C /r push origin refs/heads/release/1:refs/heads/release/1"'
+check "git-ops: turning the gate off or skipping hooks is denied" 'denies dn-git-ops "DN_GATE=off git -C /r push origin refs/heads/a:refs/heads/a" && denies dn-git-ops "git -C /r -c core.hooksPath=/dev/null push origin refs/heads/a:refs/heads/a"'
+check "git-ops: staging explicit files is allowed, the whole tree is not" 'allows dn-git-ops "git -C /r add -- src/a.py b.txt" && denies dn-git-ops "git -C /r add -A" && denies dn-git-ops "git -C /r add -- ."'
+check "git-ops: a commit message heredoc is allowed, whatever it contains" 'allows dn-git-ops "$(printf "git -C /r commit -F - <<'"'"'EOF'"'"'\nfix; \$(x) and \`y\`\nEOF")"'
+check "git-ops: a command after the heredoc is denied" 'denies dn-git-ops "$(printf "git -C /r commit -F - <<'"'"'EOF'"'"'\nmsg\nEOF\nrm -rf /")"'
+check "git-ops: merge and rebase are denied" 'denies dn-git-ops "git -C /r merge main" && denies dn-git-ops "git -C /r rebase main" && denies dn-git-ops "gh pr merge 3"'
+check "other agents and the main session are never touched" 'allows dn-explorer "rm -rf x | sh" && allows "" "git push --force"'
+
+echo "guard wiring keeps existing settings"
+G="$(new_repo g)"; mkdir -p "$G/.claude"
+echo '{"permissions":{"allow":["Bash(ls:*)"]},"hooks":{"PreToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"echo mine"}]}]}}' > "$G/.claude/settings.json"
+"$KIT/install.sh" "$G" >/dev/null
+check "the user's own settings and hooks survive the install" 'jq -e ".permissions.allow[0] == \"Bash(ls:*)\" and (.hooks.PreToolUse | length) == 2 and .hooks.PreToolUse[0].hooks[0].command == \"echo mine\"" $G/.claude/settings.json >/dev/null'
+"$KIT/uninstall.sh" "$G" >/dev/null
+check "uninstall removes only the guard entry" 'jq -e ".permissions.allow[0] == \"Bash(ls:*)\" and (.hooks.PreToolUse | length) == 1" $G/.claude/settings.json >/dev/null && ! grep -q agent-guard $G/.claude/settings.json'
+B2="$(new_repo g2)"; mkdir -p "$B2/.claude"; echo 'not json' > "$B2/.claude/settings.json"
+out="$("$KIT/install.sh" "$B2")"
+check "invalid settings.json is left alone, with a warning" 'grep -q "not valid JSON" <<<"$out" && [[ "$(cat $B2/.claude/settings.json)" == "not json" ]]'
+
 echo "existing hook"
 H="$(new_repo b)"
 printf '#!/usr/bin/env bash\ncat > "%s/refs.txt"\necho mine >> "%s/ran.txt"\n' "$WORK" "$WORK" > "$H/.git/hooks/pre-push"
@@ -205,6 +244,7 @@ check "edited kit file moved to backup" '[[ ! -f $H/.claude/skills/dn-plan/SKILL
 check "user hook restored without the block" '! grep -q dadosnow-kit $H/.git/hooks/pre-push && grep -q "echo mine" $H/.git/hooks/pre-push'
 "$KIT/uninstall.sh" "$R" >/dev/null
 check "gate-only hook removed" '[[ ! -f $R/.git/hooks/pre-push ]]'
+check "settings.json that held only the guard is removed" '[[ ! -f $R/.claude/settings.json ]]'
 
 echo
 echo "$PASS passed, $FAIL failed"
