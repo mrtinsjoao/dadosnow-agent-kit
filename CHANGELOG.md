@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3.0 — 2026-11-21
+
+- The gate scans added lines of every pushed commit for credential patterns
+  before any reviewer is called. A match blocks the push, names the file and
+  line and never prints the value. `DN_GATE_SECRETS=off` skips it.
+- A reviewer that lists a P1 finding blocks the push even when it wrote
+  `VERDICT: PASS`.
+- `DN_GATE_STRICT=1` (optional) fails closed: no Claude Code, a missing
+  reviewer, an error, a timeout, an answer with no verdict or a diff over
+  `DN_GATE_MAX_LINES` block the push. The default stays fail-open.
+- The gate log moves from the worktree's git directory to the repository's
+  main `.git`, so runs from every worktree are in one file.
+  `gate.sh --log` prints it. Runs logged by 0.2.0 from a linked worktree stay
+  in the old place. New `result` values: `block-secret`, `block-too-large`,
+  `block-no-reviewer`, `block-unreviewed`.
+- New `.dadosnow/agent-guard.sh`, a Claude Code PreToolUse hook that denies
+  any command outside the lists of `dn-monitor` and `dn-git-ops`: for
+  `dn-git-ops`, only the fixed push form, never a protected branch, no flags,
+  no chained commands. `install.sh` adds one entry to
+  `.claude/settings.json` and keeps everything else in the file;
+  `uninstall.sh` removes only that entry. Needs `jq`. It checks command
+  lines, not file contents, and is not a sandbox.
+- `dn-monitor` triages open pull requests (size, risk files, checks) and
+  names the failed job and step of the last failed CI run. It never judges
+  the code, comments, merges or re-runs.
+- New skill `dn-lab`: test a tool or idea on a bench outside the repository,
+  one directory per test, `RESULTS.md` with one of four verdicts (WORKS,
+  WORKS WITH CAVEATS, DOES NOT WORK, NOT TESTABLE) and what needs a login.
+- CI runs `shellcheck` and `tests/name_scan.sh`, which fails when a term from
+  a private list (a repository secret, never stored here) appears in a
+  tracked file. The suite grows from 31 to 84 checks, including push from a
+  git worktree.
+- Not verified in a live Claude Code session: the guard is tested by feeding
+  it hook payloads; it relies on the hook input carrying `agent_type` for
+  commands run by a subagent.
+
 ## 0.2.0 — 2026-10-11
 
 - Claude Haiku 5.5 (`claude-haiku-5-5`) for bounded work. `models.yaml`

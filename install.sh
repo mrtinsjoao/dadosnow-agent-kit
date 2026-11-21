@@ -4,9 +4,11 @@
 #   ./install.sh [TARGET_DIR] [--force] [--no-gate]
 #
 # Copies the kit into TARGET_DIR (default: current directory):
-#   .claude/skills/dn-*      skills: dn-init, dn-plan, dn-tdd, dn-review
+#   .claude/skills/dn-*      skills: dn-init, dn-plan, dn-tdd, dn-review, dn-lab
 #   .claude/agents/dn-*      subagents: explorer, two reviewers, git-ops, monitor
-#   .dadosnow/               gate script, model reference, templates
+#   .dadosnow/               gate script, agent guard, model reference, templates
+#   .claude/settings.json    one PreToolUse hook entry: the guard that limits
+#                            what dn-monitor and dn-git-ops may run (needs jq)
 #   pre-push hook block      the review gate (skip with --no-gate)
 #
 # Additive and idempotent. Files unchanged since the last install are updated;
@@ -23,7 +25,7 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     --no-gate) GATE=0 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) TARGET="$arg" ;;
   esac
@@ -70,7 +72,7 @@ LEGACY=0
 [[ -f "$TARGET/.dadosnow/VERSION" && ! -f "$MANIFEST" && $FORCE -eq 0 ]] && LEGACY=1
 cd "$KIT_DIR/kit"
 while IFS= read -r f; do install_file "${f#./}"; done < <(find . -type f ! -path './hooks/*' | sort)
-chmod +x "$TARGET/.dadosnow/gate.sh"
+chmod +x "$TARGET/.dadosnow/gate.sh" "$TARGET/.dadosnow/agent-guard.sh"
 # A 0.1.0 tree keeps its VERSION until --force actually updates it; with a
 # manifest, kept files are the user's own edits and VERSION moves on.
 if (( ! LEGACY || kept == 0 )); then echo "$KIT_VERSION" > "$TARGET/.dadosnow/VERSION"; fi
@@ -79,6 +81,24 @@ cp "$NEW_MANIFEST" "$MANIFEST"
 # Backups stay out of git.
 GI="$TARGET/.gitignore"
 grep -qxF '.dadosnow/backup/' "$GI" 2>/dev/null || { printf '\n# DadosNow kit\n.dadosnow/backup/\n' >> "$GI"; echo "  + .gitignore entry for .dadosnow/backup/"; }
+
+# Command guard for the two bounded agents: one PreToolUse entry in the
+# project's Claude Code settings. Existing settings are kept as they are.
+SETTINGS="$TARGET/.claude/settings.json"
+GUARD_CMD='bash "$CLAUDE_PROJECT_DIR/.dadosnow/agent-guard.sh"'
+if ! command -v jq >/dev/null 2>&1; then
+  echo "  ! jq not found — agent guard NOT wired. Install jq and re-run, or add a PreToolUse"
+  echo "    hook for Bash to .claude/settings.json with the command: $GUARD_CMD"
+elif [[ -f "$SETTINGS" ]] && ! jq -e 'type == "object"' "$SETTINGS" >/dev/null 2>&1; then
+  echo "  ! $SETTINGS is not valid JSON — agent guard NOT wired. Fix the file and re-run."
+elif [[ -f "$SETTINGS" ]] && grep -q 'agent-guard.sh' "$SETTINGS"; then
+  :
+else
+  [[ -f "$SETTINGS" ]] || echo '{}' > "$SETTINGS"
+  jq --arg c "$GUARD_CMD" '.hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{matcher: "Bash", hooks: [{type: "command", command: $c, timeout: 10}]}])' \
+    "$SETTINGS" > "$SETTINGS.dn" && cat "$SETTINGS.dn" > "$SETTINGS" && rm -f "$SETTINGS.dn"
+  echo "  + agent guard wired in .claude/settings.json (limits dn-monitor and dn-git-ops)"
+fi
 
 # Review gate on pre-push.
 hooks_dir() {  # absolute hooks dir for $1, honoring core.hooksPath (works on git < 2.31)

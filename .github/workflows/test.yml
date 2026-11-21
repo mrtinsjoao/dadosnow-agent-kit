@@ -13,7 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Tool versions
+        run: bash --version | head -1 && git --version && jq --version && shellcheck --version | sed -n 2p
       - name: Shell syntax
-        run: bash -n install.sh uninstall.sh kit/.dadosnow/gate.sh tests/test_kit.sh
+        run: bash -n install.sh uninstall.sh kit/.dadosnow/gate.sh kit/.dadosnow/agent-guard.sh tests/test_kit.sh tests/name_scan.sh
+      - name: Shellcheck
+        run: shellcheck -S warning install.sh uninstall.sh kit/.dadosnow/gate.sh kit/.dadosnow/agent-guard.sh tests/test_kit.sh tests/name_scan.sh
       - name: End-to-end tests (stub claude, no model calls)
         run: bash tests/test_kit.sh
+      - name: Name scan (terms come from a repository secret; skipped when it is not set)
+        env:
+          DN_DENYLIST: ${{ secrets.DN_DENYLIST }}
+        run: bash tests/name_scan.sh

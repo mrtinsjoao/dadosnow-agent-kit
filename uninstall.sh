@@ -28,6 +28,20 @@ done < <(find . -type f ! -path './hooks/*' | sort)
 rm -f "$TARGET/.dadosnow/VERSION" "$MANIFEST"
 for d in "$TARGET"/.claude/skills/dn-* "$TARGET"/.claude/skills "$TARGET"/.claude/agents; do [[ -d "$d" ]] && rmdir "$d" 2>/dev/null || true; done
 
+# The guard entry in .claude/settings.json; everything else in the file stays.
+SETTINGS="$TARGET/.claude/settings.json"
+if [[ -f "$SETTINGS" ]] && grep -q 'agent-guard.sh' "$SETTINGS"; then
+  if command -v jq >/dev/null 2>&1 && jq -e 'type == "object"' "$SETTINGS" >/dev/null 2>&1; then
+    jq '.hooks.PreToolUse = [(.hooks.PreToolUse // [])[] | select(((.hooks // []) | map(.command // "") | join(" ")) | contains("agent-guard.sh") | not)]
+        | if .hooks.PreToolUse == [] then del(.hooks.PreToolUse) else . end
+        | if .hooks == {} then del(.hooks) else . end' "$SETTINGS" > "$SETTINGS.dn" && cat "$SETTINGS.dn" > "$SETTINGS" && rm -f "$SETTINGS.dn"
+    if [[ "$(jq -c . "$SETTINGS")" == "{}" ]]; then rm -f "$SETTINGS"; echo "  - .claude/settings.json (held only the agent guard)"
+    else echo "  - agent guard entry removed from .claude/settings.json (your settings kept)"; fi
+  else
+    echo "  ! remove the agent-guard.sh hook from .claude/settings.json by hand (jq not available or the file is not valid JSON)"
+  fi
+fi
+
 if git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   HOOKS="$(git -C "$TARGET" config --type=path core.hooksPath 2>/dev/null || git -C "$TARGET" config core.hooksPath 2>/dev/null || true)"
   [[ -n "$HOOKS" ]] || HOOKS="$(git -C "$TARGET" rev-parse --git-path hooks)"

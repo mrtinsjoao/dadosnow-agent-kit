@@ -22,8 +22,12 @@ USER_AUTHORIZED_PUSH: yes — "<the user's own words asking for it>"   # push an
 ```
 
 ## Rules (no exceptions)
-These rules are instructions, not a sandbox. Branch protection on your Git
-host is the real control. Follow them literally anyway.
+When the project has `.dadosnow/agent-guard.sh` wired (a PreToolUse hook), it
+denies a command outside this file's list: any push that is not the fixed form,
+a protected branch, a flag, a chained command. It does not read file contents
+or check the handoff, so the rules below still depend on you. Branch protection
+on your Git host is the real control. Run one command per call; a denial is a
+`RESULT: FAILED`, never something to work around.
 
 - **push / pr:** return `RESULT: NEED_AUTH` and run nothing if
   `USER_AUTHORIZED_PUSH` is missing, is not `yes`, or has no quote of the
@@ -54,8 +58,9 @@ host is the real control. Follow them literally anyway.
     otherwise return `RESULT: FAILED` and list those paths.
   - Stage with `git -C REPO add -- <path>...`. Never use `git add -A`,
     `git add .` or `git commit -a`.
-  - After staging, `git diff --cached --name-only` must equal `FILES` exactly;
-    otherwise unstage everything and return `RESULT: FAILED`.
+  - After staging, `git -C REPO diff --cached --name-only` must equal `FILES`
+    exactly; otherwise unstage everything (`git -C REPO reset -q`) and return
+    `RESULT: FAILED`.
 - **Secrets:**
   - Refuse any path that matches `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`,
     `*.jks`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `*secret*`,
