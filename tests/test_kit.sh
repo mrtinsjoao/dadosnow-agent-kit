@@ -3,6 +3,8 @@
 # Uses a stub `claude` so no model is called and nothing is billed.
 #   bash tests/test_kit.sh
 
+# check() evals its condition, so variables used only there look unused.
+# shellcheck disable=SC2034
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
@@ -48,6 +50,8 @@ out="$("$KIT/install.sh" "$R")"
 check "files installed" '[[ -f $R/.claude/agents/dn-code-reviewer.md && -x $R/.dadosnow/gate.sh && -f $R/.claude/skills/dn-init/SKILL.md ]]'
 check "haiku agents installed" '[[ -f $R/.claude/agents/dn-git-ops.md && -f $R/.claude/agents/dn-monitor.md ]] && grep -q "^model: claude-haiku-5-5" $R/.claude/agents/dn-git-ops.md'
 check "agent guard installed and wired once" '[[ -x $R/.dadosnow/agent-guard.sh ]] && [[ $(jq "[.hooks.PreToolUse[] | select(.matcher == \"Bash\")] | length" $R/.claude/settings.json) -eq 1 ]]'
+check "dn-lab skill and its results template installed" '[[ -f $R/.claude/skills/dn-lab/SKILL.md && -f $R/.dadosnow/LAB-RESULTS.template.md ]]'
+check "dn-lab names the four verdicts and keeps the bench outside the repo" 'grep -q "WORKS WITH CAVEATS" $R/.claude/skills/dn-lab/SKILL.md && grep -q "DOES NOT WORK" $R/.claude/skills/dn-lab/SKILL.md && grep -q "NOT TESTABLE" $R/.claude/skills/dn-lab/SKILL.md && grep -q "outside the repository" $R/.claude/skills/dn-lab/SKILL.md'
 check "hook installed" 'grep -q "dadosnow-kit gate" $R/.git/hooks/pre-push && [[ -x $R/.git/hooks/pre-push ]]'
 out="$("$KIT/install.sh" "$R")"
 check "reinstall is idempotent" 'grep -q "Done: 0 added, 0 replaced, 0 kept" <<<"$out" && [[ $(grep -c ">>> dadosnow-kit gate" $R/.git/hooks/pre-push) -eq 1 ]]'
@@ -210,6 +214,24 @@ check "uninstall removes only the guard entry" 'jq -e ".permissions.allow[0] == 
 B2="$(new_repo g2)"; mkdir -p "$B2/.claude"; echo 'not json' > "$B2/.claude/settings.json"
 out="$("$KIT/install.sh" "$B2")"
 check "invalid settings.json is left alone, with a warning" 'grep -q "not valid JSON" <<<"$out" && [[ "$(cat $B2/.claude/settings.json)" == "not json" ]]'
+
+echo "name scan"
+SCAN="$KIT/tests/name_scan.sh"
+N="$(new_repo names)"; echo "we built this for Zorblat Widgets last year" > "$N/notes.md"; echo "zorblatish is another word" > "$N/other.md"
+git -C "$N" add -A; git -C "$N" commit -qm notes
+out="$(cd "$N" && DN_DENYLIST="Zorblat Widgets" bash "$SCAN" 2>&1)"; rc=$?
+check "a denied name in a tracked file fails the scan" '[[ $rc -ne 0 ]] && grep -q "notes.md:1" <<<"$out"'
+check "the report names file and line but never the term" '! grep -qi "zorblat" <<<"$out"'
+out="$(cd "$N" && DN_DENYLIST="zorblat" bash "$SCAN" 2>&1)"; rc=$?
+check "terms match whole words, any case" '[[ $rc -ne 0 ]] && grep -q "notes.md" <<<"$out" && ! grep -q "other.md" <<<"$out"'
+printf 'Quuxterm\n# a comment\n\nFnordly\n' > "$WORK/deny.txt"
+out="$(cd "$N" && DN_DENYLIST_FILE="$WORK/deny.txt" bash "$SCAN" 2>&1)"; rc=$?
+check "a clean tree passes, and says how many terms were checked" '[[ $rc -eq 0 ]] && grep -q "2 terms" <<<"$out"'
+out="$(cd "$N" && DN_DENYLIST="" DN_DENYLIST_FILE="$WORK/none.txt" bash "$SCAN" 2>&1)"; rc=$?
+check "no list: the scan is skipped and says so" '[[ $rc -eq 0 ]] && grep -q "skipped" <<<"$out"'
+echo "Zorblat Widgets again" > "$N/untracked.md"
+out="$(cd "$N" && DN_DENYLIST="Fnordly" bash "$SCAN" 2>&1)"; rc=$?
+check "untracked files are not scanned" '[[ $rc -eq 0 ]]'
 
 echo "existing hook"
 H="$(new_repo b)"
